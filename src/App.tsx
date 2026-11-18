@@ -38,7 +38,7 @@ export default function App() {
   const selectedNode = parsed.ok ? resolveSelected(parsed.node, selectedId) : undefined
   const crumbs = parsed.ok ? breadcrumbOf(index, selectedId) : []
   const path = crumbs.map((c) => c.label).join(' › ')
-  const rootDetail = parsed.ok ? narrate(parsed.node, 2) : undefined
+  const rootDetail = useMemo(() => (parsed.ok ? narrate(parsed.node, 2) : undefined), [parsed])
 
   const diffText = useMemo(() => {
     if (pinned === null) return ''
