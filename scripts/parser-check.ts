@@ -423,6 +423,54 @@ check('S4 HTML 层存在', s4Html.includes('katex-html'))
 check('S4 序数读二不读两', zhNumbers('第2行第2列') === '第二行第二列', zhNumbers('第2行第2列'))
 check('S4 量词仍读两', zhNumbers('2个矩阵') === '两个矩阵', zhNumbers('2个矩阵'))
 
+// S1 换底对数：消费紧随的真数因子，不再出现「下标 ab」粘连
+const LOGBASE = '\\log_{a}b=\\frac{\\log_{c}b}{\\log_{c}a}'
+const logTree = mustParse(LOGBASE)
+check(
+  'S1 C24 细节句',
+  narrate(logTree, 2) === '以 a 为底 b 的对数 等于 分子为 以 c 为底 b 的对数，分母为 以 c 为底 a 的对数',
+  narrate(logTree, 2),
+)
+for (const lv of [0, 1, 2] as const)
+  check(`S1 C24 L${lv} 无下标粘连`, !narrate(logTree, lv).includes('下标'), narrate(logTree, lv))
+check('S1 裸对数读法', narrate(mustParse('\\log_a b'), 2) === '以 a 为底 b 的对数', narrate(mustParse('\\log_a b'), 2))
+check('S1 真数不被读成乘以', !narrate(mustParse('\\log_a b'), 2).includes('乘以'))
+check('S1 ln 同样生效', narrate(mustParse('\\ln_{2}x'), 2) === '以 二 为底 x 的对数', narrate(mustParse('\\ln_{2}x'), 2))
+check('S1 括号组真数', narrate(mustParse('\\log_a{xy}'), 2) === '以 a 为底 xy 的对数', narrate(mustParse('\\log_a{xy}'), 2))
+check('S1 加号不消费', narrate(mustParse('\\log_a b+c'), 2) === '以 a 为底 b 的对数 加 c', narrate(mustParse('\\log_a b+c'), 2))
+check('S1 无真数不消费', narrate(mustParse('\\log_a'), 2) === '对数 下标 a', narrate(mustParse('\\log_a'), 2))
+check('S1 下标非单原子不触发', narrate(mustParse('\\log_{a+1}b'), 2).includes('下标'), narrate(mustParse('\\log_{a+1}b'), 2))
+check('S1 带指数不触发', narrate(mustParse('\\log^{2}_a b'), 2).includes('下标'), narrate(mustParse('\\log^{2}_a b'), 2))
+for (const tex of [LOGBASE, '\\log_a b', '\\log_a b+c', '\\log_a{xy}']) {
+  for (const node of allNodes(mustParse(tex))) {
+    const leaks = l1GrandchildLeaks(node)
+    check(`S1+A6 对数无泄漏 ${node.id || '根'}@${tex.slice(0, 10)}`, leaks.length === 0, leaks.join(','))
+  }
+}
+
+// S2 带参未支持命令：按 ARITY 吞参，整体读「未支持的符号」，计入 unknown，渲染保留原源码
+const binom = parse('C=\\binom{n}{k}')
+check('S2 binom 解析成功', binom.ok)
+if (binom.ok) {
+  check('S2 binom 角落计数≥1', binom.unknown.length >= 1 && binom.unknown.includes('binom'), JSON.stringify(binom.unknown))
+  const bl = narrateLayers(binom.node)
+  for (const [name, s] of [['骨架', bl.skeleton], ['局部', bl.local], ['细节', bl.detail]] as const) {
+    check(`S2 binom ${name}无乘以`, !s.includes('乘以'), s)
+    check(`S2 binom ${name}读未支持的符号`, s.includes('未支持的符号'), s)
+  }
+  check('S2 binom 参数组被吞掉', allNodes(binom.node).every((n) => n.kind !== 'group'))
+  const binomHtml = katex.renderToString(toWrappedLatex(binom.node), KATEX_OPTS)
+  check('S2 binom 渲染无错误色', !binomHtml.includes('katex-error') && !binomHtml.includes('color: #cc0000'))
+}
+const opname = parse('y=\\operatorname{sgn}(x)')
+check('S2 operatorname 吞一参', opname.ok && opname.unknown.length === 1 && opname.unknown[0] === 'operatorname')
+const barx = parse('\\bar{x}')
+check('S2 bar 吞一参', barx.ok && barx.unknown.length === 1 && barx.unknown[0] === 'bar')
+check('S2 修饰符读未支持的符号', narrate(mustParse('\\hat{a}'), 2) === '未支持的符号', narrate(mustParse('\\hat{a}'), 2))
+check('S2 修饰符不读参数内容', !narrate(mustParse('\\bar{x}'), 2).includes('x'), narrate(mustParse('\\bar{x}'), 2))
+check('S2 非 ARITY 仍念符号名', narrate(mustParse('\\foo'), 2) === 'foo')
+check('S2 多修饰符各计一次', parse('\\hat{a}+\\vec{v}').ok && (parse('\\hat{a}+\\vec{v}') as { unknown: string[] }).unknown.length === 2)
+
 if (failed) {
   throw new Error(`共 ${failed} 项失败`)
 }

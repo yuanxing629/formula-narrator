@@ -146,6 +146,11 @@ export function readAtom(v: string): string {
   return v.startsWith('\\') ? v.slice(1) : v
 }
 
+/** 带参未支持命令整体读「未支持的符号」，不逐字拼源码 */
+function readAtomNode(n: Node & { kind: 'atom' }): string {
+  return n.unsupported ? '未支持的符号' : readAtom(n.value)
+}
+
 function isAlnum(n: Node): boolean {
   return n.kind === 'atom' && /^[0-9a-zA-Z]$/.test(n.value)
 }
@@ -156,6 +161,38 @@ function isFunc(n: Node): boolean {
   if (n.kind === 'atom') return FUNC_NAMES.has(n.value) || FUNC_NAMES.has(n.value.slice(1))
   if (n.kind === 'scripts') return isFunc(n.base)
   return false
+}
+
+/** 换底对数：base 为 \log/\ln、下标是单个原子的 scripts（S1） */
+function isLogBase(n: Node): n is ScriptsNode {
+  return (
+    n.kind === 'scripts' &&
+    n.base.kind === 'atom' &&
+    (n.base.value === '\\log' || n.base.value === '\\ln') &&
+    !n.sup &&
+    !!n.sub &&
+    n.sub.children.length === 1 &&
+    n.sub.children[0].kind === 'atom'
+  )
+}
+
+/** 可被对数消费的真数因子：字母数字原子、括号组、结构节点；运算符/关系符不算 */
+function logArgOk(n: Node): boolean {
+  if (isAlnum(n)) return true
+  return n.kind === 'group' || n.kind === 'frac' || n.kind === 'sqrt' || n.kind === 'bigop' || n.kind === 'matrix' || n.kind === 'cases'
+}
+
+function logPhrase(n: ScriptsNode, arg: Node): string {
+  const sub = readRow(n.sub!)
+  const argText = arg.kind === 'group' ? readRow(arg.child) : readFull(arg)
+  return `以 ${sub} 为底 ${argText} 的对数`
+}
+
+/** 行内恰好是「换底对数 + 一个真数因子」时给整体读法 */
+function logRowPhrase(row: RowNode): string | undefined {
+  const cs = row.children
+  if (cs.length === 2 && isLogBase(cs[0]) && logArgOk(cs[1])) return logPhrase(cs[0], cs[1])
+  return undefined
 }
 
 export type Part =
@@ -228,7 +265,16 @@ function readNodes(nodes: Node[]): string {
   let s = ''
   let prev: Node | undefined
   let fnParen = 0
-  for (const n of nodes) {
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i]
+    // 换底对数消费紧随的真数因子，避免真数被读成底数下标的一部分（S1）
+    if (isLogBase(n) && i + 1 < nodes.length && logArgOk(nodes[i + 1])) {
+      if (prev) s += ' '
+      s += logPhrase(n, nodes[i + 1])
+      prev = n
+      i++
+      continue
+    }
     if (prev && isFunc(prev) && n.kind === 'group') {
       s += readRow(n.child)
       prev = n
@@ -469,6 +515,8 @@ function scale(row: RowNode): string {
     const t = terms[0] as Part & { type: 'term' }
     if (isMonomial(t)) return readTerm(t)
     if (t.nodes.length === 1) return shortType(t.nodes[0])
+    const log = logRowPhrase({ kind: 'row', id: '', children: t.nodes })
+    if (log) return (t.sign === '-' ? '负 ' : t.sign === '+' ? '正 ' : '') + log
     const atomsOnly = t.nodes.every((x) => x.kind === 'atom')
     const hasParen = t.nodes.some((x) => x.kind === 'atom' && '()[]'.includes(x.value))
     if (atomsOnly && !hasParen) return readTerm(t)
@@ -483,7 +531,7 @@ function scale(row: RowNode): string {
 
 /** L1 用的子结构描述：叶子/单项读内容；复合结构只给类型 + 自身直接项数，不读孙节点 */
 function descriptor(n: Node): string {
-  if (n.kind === 'atom') return readAtom(n.value)
+  if (n.kind === 'atom') return readAtomNode(n)
   if (n.kind === 'row') {
     const ps = parts(n)
     const terms = ps.filter((p) => p.type === 'term')
@@ -491,6 +539,8 @@ function descriptor(n: Node): string {
       const t = terms[0] as Part & { type: 'term' }
       if (isMonomial(t)) return readTerm(t)
       if (t.nodes.length === 1) return typeWithScale(t.nodes[0])
+      const log = logRowPhrase({ kind: 'row', id: '', children: t.nodes })
+      if (log) return (t.sign === '-' ? '负 ' : t.sign === '+' ? '正 ' : '') + log
       if (t.nodes.every((x) => x.kind === 'atom')) return readTerm(t)
       return termDesc(t)
     }
@@ -558,7 +608,7 @@ function simpleNum(num: RowNode): boolean {
 function readFull(n: Node): string {
   switch (n.kind) {
     case 'atom':
-      return readAtom(n.value)
+      return readAtomNode(n)
     case 'row':
       return readRow(n)
     case 'group':
@@ -644,7 +694,7 @@ function l0(n: Node): string {
     case 'cases':
       return `分段表达式，共${cn(n.rows.length, true)}种情况，每种带一个条件。`
     case 'atom':
-      return readAtom(n.value) + '。'
+      return readAtomNode(n) + '。'
   }
 }
 
@@ -656,7 +706,11 @@ function l1(n: Node): string {
       if (eq) return `左边是${descriptor(eq.left)}；右边是${descriptor(eq.right)}。`
       const ps = parts(n)
       const terms = ps.filter((p): p is Part & { type: 'term' } => p.type === 'term')
-      const descs = terms.map((p) => (isMonomial(p) ? readTerm(p) : termDesc(p)))
+      const descs = terms.map((p) => {
+        const log = logRowPhrase({ kind: 'row', id: '', children: p.nodes })
+        if (log) return (p.sign === '-' ? '负 ' : p.sign === '+' ? '正 ' : '') + log
+        return isMonomial(p) ? readTerm(p) : termDesc(p)
+      })
       const conn = connPhrase(n)
       return `共${cn(terms.length, true)}项：${descs.join('；')}${conn ? '，' + conn : ''}。`
     }
@@ -691,7 +745,7 @@ function l1(n: Node): string {
           .join('；') + '。'
       )
     case 'atom':
-      return readAtom(n.value) + '。'
+      return readAtomNode(n) + '。'
   }
 }
 
@@ -785,7 +839,9 @@ export function l1GrandchildLeaks(n: Node): string[] {
     } else {
       for (const p of parts(n)) {
         if (p.type === 'conn') continue
-        if (isMonomial(p)) pieces.push({ desc: readTerm(p), sub: { kind: 'row', id: '', children: p.nodes } })
+        const log = logRowPhrase({ kind: 'row', id: '', children: p.nodes })
+        if (log) pieces.push({ desc: log, sub: { kind: 'row', id: '', children: p.nodes } })
+        else if (isMonomial(p)) pieces.push({ desc: readTerm(p), sub: { kind: 'row', id: '', children: p.nodes } })
         else if (p.nodes.length === 1) pieces.push({ desc: typeWithScale(p.nodes[0]), sub: p.nodes[0] })
         else if (p.nodes.every((x) => x.kind === 'atom'))
           pieces.push({ desc: readTerm(p), sub: { kind: 'row', id: '', children: p.nodes } })
@@ -810,6 +866,17 @@ export function l1GrandchildLeaks(n: Node): string[] {
     leafTokens(sub, 0, forbidden)
     // 直接子层允许读的内容（如幂的底数）不算泄漏；跨支共享字母只按支判定
     for (const k of childrenOf(sub)) for (const t of directContentTokens(k)) forbidden.delete(t)
+    // 换底对数整体读法是经裁定的直接内容：底数下标与真数因子不算泄漏（S1）
+    if (sub.kind === 'row') {
+      const cs = sub.children
+      for (let i = 0; i + 1 < cs.length; i++) {
+        const head = cs[i]
+        if (isLogBase(head) && logArgOk(cs[i + 1])) {
+          for (const t of tokenizeRead(logPhrase(head, cs[i + 1]))) forbidden.delete(t)
+          i++
+        }
+      }
+    }
     for (const t of tokenizeRead(desc)) if (forbidden.has(t)) leaks.push(t)
   }
   return leaks

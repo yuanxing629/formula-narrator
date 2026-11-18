@@ -10,6 +10,8 @@ export interface AtomNode {
   kind: 'atom'
   id: string
   value: string
+  /** 白名单外带参命令：参数已整体吞掉，朗读为「未支持的符号」；value 保留原源码供渲染 */
+  unsupported?: boolean
 }
 export interface GroupNode {
   kind: 'group'
@@ -68,7 +70,7 @@ export type Node =
 
 export class ParseError extends Error {}
 
-type Tok =
+type Tok = { pos: number; end: number } & (
   | { t: 'cmd'; v: string }
   | { t: 'char'; v: string }
   | { t: 'num'; v: string }
@@ -79,6 +81,7 @@ type Tok =
   | { t: 'cell' }
   | { t: 'rowsep' }
   | { t: 'eof' }
+)
 
 const MATRIX_ENVS = ['matrix', 'pmatrix', 'bmatrix', 'Bmatrix', 'vmatrix', 'Vmatrix']
 
@@ -98,10 +101,19 @@ export const SYMBOL_WHITELIST = [
   'log', 'ln', 'sin', 'cos', 'tan', 'exp',
 ]
 
+// 白名单外带参命令的参数个数：解析时按 arity 吞掉紧邻参数，整体作为一个「未支持的符号」原子。
+// 不吞参会把参数误读成独立因子（如 \binom{n}{k} 读成「n 乘以 k」），语义全错且无提示。
+const ARITY: Record<string, number> = {
+  binom: 2,
+  operatorname: 1, mathrm: 1, mathbb: 1, mathcal: 1, text: 1,
+  hat: 1, bar: 1, vec: 1, dot: 1, ddot: 1, tilde: 1, widehat: 1, overline: 1, underline: 1,
+}
+
 function tokenize(src: string): Tok[] {
   const toks: Tok[] = []
   let i = 0
   while (i < src.length) {
+    const start = i
     const c = src[i]
     if (/\s/.test(c)) {
       i++
@@ -109,15 +121,15 @@ function tokenize(src: string): Tok[] {
     }
     if (c === '\\') {
       if (src[i + 1] === '\\') {
-        toks.push({ t: 'rowsep' })
         i += 2
+        toks.push({ t: 'rowsep', pos: start, end: i })
         continue
       }
       const m = /^[a-zA-Z]+/.exec(src.slice(i + 1))
       if (m) {
-        // \left \right 只影响定界符大小，结构上透明
-        if (m[0] !== 'left' && m[0] !== 'right') toks.push({ t: 'cmd', v: m[0] })
         i += 1 + m[0].length
+        // \left \right 只影响定界符大小，结构上透明
+        if (m[0] !== 'left' && m[0] !== 'right') toks.push({ t: 'cmd', v: m[0], pos: start, end: i })
         continue
       }
       // \\, \\; \\! 等间距命令：跳过
@@ -129,26 +141,26 @@ function tokenize(src: string): Tok[] {
     }
     if (/[0-9]/.test(c)) {
       const m = /^[0-9]+(\.[0-9]+)?/.exec(src.slice(i))!
-      toks.push({ t: 'num', v: m[0] })
       i += m[0].length
+      toks.push({ t: 'num', v: m[0], pos: start, end: i })
       continue
     }
-    if (c === '{') toks.push({ t: 'open' })
-    else if (c === '}') toks.push({ t: 'close' })
-    else if (c === '^') toks.push({ t: 'sup' })
-    else if (c === '_') toks.push({ t: 'sub' })
-    else if (c === '&') toks.push({ t: 'cell' })
-    else toks.push({ t: 'char', v: c })
     i++
+    if (c === '{') toks.push({ t: 'open', pos: start, end: i })
+    else if (c === '}') toks.push({ t: 'close', pos: start, end: i })
+    else if (c === '^') toks.push({ t: 'sup', pos: start, end: i })
+    else if (c === '_') toks.push({ t: 'sub', pos: start, end: i })
+    else if (c === '&') toks.push({ t: 'cell', pos: start, end: i })
+    else toks.push({ t: 'char', v: c, pos: start, end: i })
   }
-  toks.push({ t: 'eof' })
+  toks.push({ t: 'eof', pos: src.length, end: src.length })
   return toks
 }
 
 class Parser {
   private pos = 0
   readonly unknown: string[] = []
-  constructor(private toks: Tok[]) {}
+  constructor(private toks: Tok[], private src: string) {}
 
   private peek(): Tok {
     return this.toks[this.pos]
@@ -275,6 +287,12 @@ class Parser {
       }
       default: {
         if (!SYMBOL_WHITELIST.includes(tok.v)) this.unknown.push(tok.v)
+        const arity = ARITY[tok.v]
+        if (arity !== undefined) {
+          for (let a = 0; a < arity; a++) this.parseArg()
+          const last = this.toks[this.pos - 1]
+          return { kind: 'atom', id: '', value: this.src.slice(tok.pos, last.end), unsupported: true }
+        }
         return { kind: 'atom', id: '', value: '\\' + tok.v }
       }
     }
@@ -418,7 +436,7 @@ export type ParseResult =
 
 export function parse(latex: string): ParseResult {
   try {
-    const parser = new Parser(tokenize(latex))
+    const parser = new Parser(tokenize(latex), latex)
     const node = parser.parseRoot()
     assignIds(node, '0')
     return { ok: true, node, unknown: parser.unknown }
