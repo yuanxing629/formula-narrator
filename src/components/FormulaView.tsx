@@ -7,6 +7,8 @@ import { parseSideId, sideChildIds, type AddrEntry } from '../lib/address'
 
 interface Props {
   tree?: RowNode
+  /** 解析失败时的降级渲染：原始 LaTeX 直接交 KaTeX，不插桩、不可点选 */
+  rawLatex?: string
   selectedId: string
   index: Map<string, AddrEntry>
   onSelect: (id: string) => void
@@ -21,17 +23,25 @@ const KATEX_OPTS: katex.KatexOptions = {
   throwOnError: false,
 }
 
-export default function FormulaView({ tree, selectedId, index, onSelect }: Props) {
+const RAW_OPTS: katex.KatexOptions = {
+  displayMode: true,
+  strict: 'ignore',
+  output: 'htmlAndMathml',
+  throwOnError: false,
+}
+
+export default function FormulaView({ tree, rawLatex, selectedId, index, onSelect }: Props) {
   const ref = useRef<HTMLDivElement>(null)
 
   const html = useMemo(() => {
-    if (!tree) return ''
     try {
-      return katex.renderToString(toWrappedLatex(tree), KATEX_OPTS)
+      if (tree) return katex.renderToString(toWrappedLatex(tree), KATEX_OPTS)
+      if (rawLatex && rawLatex.trim()) return katex.renderToString(rawLatex, RAW_OPTS)
     } catch {
-      return ''
+      // 降级到提示文案
     }
-  }, [tree])
+    return ''
+  }, [tree, rawLatex])
 
   // 读屏走 MathML（KaTeX 默认可读）与下方「按结构点名」列表；视觉 HTML 层对读屏隐藏，
   // 且 aria-hidden 容器内不留可聚焦元素（去掉 tabindex/role），鼠标点击仍保留供视觉用户。
@@ -87,7 +97,7 @@ export default function FormulaView({ tree, selectedId, index, onSelect }: Props
     }
   }, [selectedId, html, index])
 
-  if (!tree || !html) {
+  if (!html) {
     return <p role="alert">公式渲染失败，请检查 LaTeX 是否完整。</p>
   }
 

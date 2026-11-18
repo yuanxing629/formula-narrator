@@ -53,6 +53,7 @@ const ATOM_READ: Record<string, string> = {
   '\\mp': '减加',
   '\\times': '乘以',
   '\\div': '除以',
+  '/': '除以',
   '\\cdot': '乘以',
   '\\infty': '无穷',
   '\\in': '属于',
@@ -136,12 +137,59 @@ const ATOM_READ: Record<string, string> = {
   '\\log': '对数',
   '\\ln': '自然对数',
   '\\exp': '指数函数',
+  // P2-b 扩充读音
+  '\\epsilon': '艾普西隆', '\\varepsilon': '艾普西隆', '\\upsilon': '宇普西隆',
+  '\\phi': '斐', '\\varphi': '斐', '\\iota': '约塔', '\\chi': '希', '\\psi': '普西',
+  '\\rho': '柔', '\\tau': '陶', '\\nu': '纽', '\\xi': '克西', '\\zeta': '泽塔',
+  '\\eta': '伊塔', '\\kappa': '卡帕', '\\vartheta': '西塔', '\\varrho': '柔',
+  '\\varsigma': '西格玛', '\\varpi': '圆周率',
+  '\\Theta': '大写西塔', '\\Pi': '大写圆周率', '\\Phi': '大写斐', '\\Psi': '大写普西',
+  '\\Xi': '大写克西', '\\Upsilon': '大写宇普西隆',
+  '\\ll': '远小于', '\\gg': '远大于', '\\leqslant': '小于等于', '\\geqslant': '大于等于',
+  '\\lesssim': '小于或约等于', '\\gtrsim': '大于或约等于', '\\asymp': '渐近于', '\\doteq': '趋近于',
+  '\\subsetneq': '真包含于', '\\supsetneq': '真包含', '\\setminus': '差集',
+  '\\mid': '给定', '\\nmid': '不整除',
+  '\\langle': '左角括号', '\\rangle': '右角括号',
+  '\\lfloor': '左下取整括号', '\\rfloor': '右下取整括号',
+  '\\lceil': '左上取整括号', '\\rceil': '右上取整括号',
+  '\\dagger': '匕首符号', '\\complement': '补集',
+  '\\longrightarrow': '趋于', '\\longleftarrow': '反向趋于',
+  '\\Longrightarrow': '推出', '\\Longleftarrow': '被推出',
+  '\\longleftrightarrow': '互推', '\\Longleftrightarrow': '互推',
+  '\\uparrow': '上箭头', '\\downarrow': '下箭头', '\\updownarrow': '上下箭头',
+  '\\nearrow': '右上箭头', '\\searrow': '右下箭头', '\\swarrow': '左下箭头', '\\nwarrow': '左上箭头',
+  '\\hookrightarrow': '嵌入到', '\\rightharpoonup': '右鱼叉箭头',
+  '\\bigcup': '大并集', '\\bigcap': '大交集', '\\iint': '二重积分', '\\iiint': '三重积分',
+  '\\oint': '环路积分', '\\oiint': '闭合曲面积分', '\\bigoplus': '大直和',
+  '\\bigotimes': '大张量积', '\\bigodot': '大点积', '\\bigvee': '大或', '\\bigwedge': '大且',
+  '\\bigsqcup': '大无交并', '\\coprod': '余积',
+  '\\det': '行列式', '\\dim': '维数', '\\gcd': '最大公约数', '\\max': '最大值', '\\min': '最小值',
+  '\\sup': '上确界', '\\inf': '下确界', '\\arcsin': '反正弦', '\\arccos': '反余弦', '\\arctan': '反正切',
+  '\\sinh': '双曲正弦', '\\cosh': '双曲余弦', '\\tanh': '双曲正切',
+  '\\cot': '余切', '\\sec': '正割', '\\csc': '余割', '\\coth': '双曲余切',
+  '\\arg': '辐角', '\\deg': '次数', '\\hom': '同态', '\\ker': '核',
+  '\\limsup': '上极限', '\\liminf': '下极限', '\\Pr': '概率',
+  '\\hbar': '约化普朗克常数', '\\ell': '埃尔', '\\Re': '实部', '\\Im': '虚部',
+  '\\aleph': '阿列夫', '\\beth': '贝斯', '\\wp': '魏尔斯特拉斯p',
+  '\\top': '顶', '\\bot': '底', '\\vdash': '推出', '\\models': '模型满足',
+  '\\simeq': '近似等于', '\\bowtie': '领结积',
+  '\\lvert': '竖线', '\\rvert': '竖线', '\\lVert': '双竖线', '\\rVert': '双竖线',
+  '\\backslash': '反斜杠', '\\colon': '冒号',
+  '\\quad': '', '\\qquad': '',
+  '\\%': '百分号', '\\{': '左花括号', '\\}': '右花括号', '\\$': '美元符号',
+  '\\#': '井号', '\\&': '和号', '\\_': '下划线',
 }
 
-const FUNC_NAMES = new Set(['f', 'g', 'h', 'sin', 'cos', 'tan', 'log', 'ln', 'exp'])
+const FUNC_NAMES = new Set([
+  'f', 'g', 'h', 'sin', 'cos', 'tan', 'log', 'ln', 'exp',
+  'det', 'dim', 'gcd', 'max', 'min', 'sup', 'inf', 'arcsin', 'arccos', 'arctan',
+  'sinh', 'cosh', 'tanh', 'cot', 'sec', 'csc', 'coth', 'arg', 'deg', 'hom', 'ker',
+  'limsup', 'liminf', 'Pr',
+])
 
 export function readAtom(v: string): string {
-  if (ATOM_READ[v]) return ATOM_READ[v]
+  // 用 !== undefined：quad/qquad 的读音是空串（静默），不能被当成缺省
+  if (ATOM_READ[v] !== undefined) return ATOM_READ[v]
   // 白名单外命令：降级念符号名
   return v.startsWith('\\') ? v.slice(1) : v
 }
@@ -260,18 +308,103 @@ function isStruct(n: Node): boolean {
   return n.kind === 'frac' || n.kind === 'sqrt' || n.kind === 'bigop' || n.kind === 'matrix'
 }
 
-/** 项内连读：隐式乘法（数字×字母、字母×括号、数字×括号）不读乘以；相邻结构节点读「乘以」（G2）；函数调用不读括号（G9） */
-function readNodes(nodes: Node[]): string {
+/** 括号跨度：从 '(' 找到配对的 ')'（可能带幂）；嵌套按深度计数，找不到则退回逐原子朗读 */
+function findSpan(nodes: Node[], i: number): { end: number; inner: Node[]; sup?: RowNode } | undefined {
+  let depth = 0
+  for (let j = i; j < nodes.length; j++) {
+    const n = nodes[j]
+    if (n.kind === 'atom' && n.value === '(') depth++
+    else if (n.kind === 'atom' && n.value === ')') {
+      depth--
+      if (depth === 0) return { end: j, inner: nodes.slice(i + 1, j) }
+    } else if (n.kind === 'scripts' && n.base.kind === 'atom' && n.base.value === ')' && !n.sub) {
+      depth--
+      if (depth === 0) return { end: j, inner: nodes.slice(i + 1, j), sup: n.sup }
+    }
+  }
+  return undefined
+}
+
+/** 名词化（P1 第二档）：两项组读「X 与 Y 的和/差」；显式乘除的两因子组读「积/商」。
+ *  读出来不通顺（含逗号/分号/冒号或仍含括号）时返回 undefined，退化第三档。 */
+function nominalOf(inner: Node[]): string | undefined {
+  const row: RowNode = { kind: 'row', id: '', children: inner }
+  const ps = parts(row)
+  let text: string | undefined
+  if (
+    ps.length === 2 &&
+    ps[0].type === 'term' &&
+    ps[1].type === 'term' &&
+    !ps[0].binary &&
+    (ps[1].binary === '+' || ps[1].binary === '-')
+  ) {
+    text = `${readTerm(ps[0])} 与 ${readTerm(ps[1])} 的${ps[1].binary === '+' ? '和' : '差'}`
+  } else if (ps.length === 1 && ps[0].type === 'term' && ps[0].nodes.length === 3) {
+    const [x, op, y] = ps[0].nodes
+    if (op.kind === 'atom' && (op.value === '\\times' || op.value === '\\cdot'))
+      text = `${readFull(x)} 与 ${readFull(y)} 的积`
+    else if (op.kind === 'atom' && (op.value === '\\div' || op.value === '/'))
+      text = `${readFull(x)} 与 ${readFull(y)} 的商`
+  }
+  if (!text) return undefined
+  if (/[，；：]/.test(text) || text.includes('左括号')) return undefined
+  return text
+}
+
+function isFactorNode(n: Node): boolean {
+  return n.kind === 'atom' ? isAlnum(n) : true
+}
+
+type SpanKind = 'nominal' | 'paren' | 'bare'
+
+/** 三档分派：不读（整式最外层等安全语境）→ 名词化（乘除/幂位置的两项组）→ 保留括号（嵌套≥2 或 ≥3 项） */
+function readSpan(
+  nodes: Node[],
+  i: number,
+  span: { end: number; inner: Node[]; sup?: RowNode },
+  safe: boolean,
+  prev: Node | undefined,
+  prevSpan: SpanKind | undefined,
+): { text: string; kind: SpanKind } {
+  const innerRow: RowNode = { kind: 'row', id: '', children: span.inner }
+  const supText = span.sup ? ` 的${expText(span.sup)}` : ''
+  const nested = span.inner.some((x) => x.kind === 'atom' && x.value === '(')
+  const many = termCount(innerRow) >= 3
+  const whole = i === 0 && span.end === nodes.length - 1 && !span.sup
+  const next = nodes[span.end + 1]
+  const nextFactor = !!next && (isFactorNode(next) || (next.kind === 'atom' && next.value === '('))
+  const prevDiv = prev?.kind === 'atom' && (prev.value === '/' || prev.value === '\\div')
+  const factorCtx = !!span.sup || !!prevSpan || (!!prev && isFactorNode(prev)) || nextFactor || prevDiv
+  if (!nested && !many) {
+    const nom = nominalOf(span.inner)
+    if (nom && factorCtx) return { text: nom + supText, kind: 'nominal' }
+  }
+  if (whole && safe && !nested && !many) return { text: readRow(innerRow), kind: 'bare' }
+  return { text: `左括号 ${readRow(innerRow)} 右括号${supText}`, kind: 'paren' }
+}
+
+/** 项内连读：隐式乘法（数字×字母、字母×括号、数字×括号）不读乘以；相邻结构节点读「乘以」（G2）；函数调用不读括号（G9）；
+ *  括号按 P1 三档降噪。safe 表示该行处于有语义边界的语境（整式/分子分母/根号内等），最外层括号可不读。 */
+function readNodes(nodes: Node[], safe = false): string {
   let s = ''
   let prev: Node | undefined
+  let prevSpan: SpanKind | undefined
   let fnParen = 0
   for (let i = 0; i < nodes.length; i++) {
     const n = nodes[i]
+    // 间距命令（quad/qquad）静默：只留词边界，不参与拼接判断
+    if (n.kind === 'atom' && ATOM_READ[n.value] === '') {
+      if (s && !s.endsWith(' ')) s += ' '
+      prev = undefined
+      prevSpan = undefined
+      continue
+    }
     // 换底对数消费紧随的真数因子，避免真数被读成底数下标的一部分（S1）
     if (isLogBase(n) && i + 1 < nodes.length && logArgOk(nodes[i + 1])) {
-      if (prev) s += ' '
+      if (prev || prevSpan) s += ' '
       s += logPhrase(n, nodes[i + 1])
       prev = n
+      prevSpan = undefined
       i++
       continue
     }
@@ -292,8 +425,31 @@ function readNodes(nodes: Node[]): string {
         continue
       }
     }
+    if (fnParen === 0 && n.kind === 'atom' && n.value === '(') {
+      const span = findSpan(nodes, i)
+      if (span) {
+        const { text, kind } = readSpan(nodes, i, span, safe, prev, prevSpan)
+        if (prevSpan) s += ' 乘以 '
+        else if (prev) {
+          // 第三档括号沿用旧拼接：字母后静默（P(A|B)、E(X) 等函数应用记法），其余留空格
+          if (kind === 'paren') s += isAlnum(prev) ? '' : ' '
+          else s += isFactorNode(prev) ? ' 乘以 ' : ' '
+        }
+        s += text
+        prev = undefined
+        prevSpan = kind
+        i = span.end
+        continue
+      }
+    }
     const piece = readFull(n)
-    if (prev) {
+    if (prevSpan) {
+      if (prevSpan === 'paren') s += ' '
+      else {
+        const operatorNext = n.kind === 'atom' && !isAlnum(n) && n.value !== '('
+        s += operatorNext ? ' ' : ' 乘以 '
+      }
+    } else if (prev) {
       const bothNum = isNum(prev) && isNum(n)
       const fnApp = isFunc(prev) && (isAlnum(n) || (n.kind === 'atom' && n.value === '('))
       const implicit =
@@ -304,23 +460,24 @@ function readNodes(nodes: Node[]): string {
     }
     s += piece
     prev = n
+    prevSpan = undefined
   }
   return s
 }
 
-function readTerm(p: Part & { type: 'term' }): string {
+function readTerm(p: Part & { type: 'term' }, safe = false): string {
   const sign = p.sign === '-' ? '负 ' : p.sign === '+' ? '正 ' : ''
-  return sign + readNodes(p.nodes)
+  return sign + readNodes(p.nodes, safe && !p.sign)
 }
 
-function readRow(row: RowNode): string {
+function readRow(row: RowNode, outerSafe = true): string {
   const ps = parts(row)
   const out: string[] = []
   for (const p of ps) {
     if (p.type === 'conn') out.push(readAtom(p.op))
     else {
       if (p.binary) out.push(readAtom(p.binary))
-      out.push(readTerm(p))
+      out.push(readTerm(p, outerSafe && !p.binary))
     }
   }
   return out.join(' ')
@@ -513,13 +670,13 @@ function scale(row: RowNode): string {
   const terms = ps.filter((p) => p.type === 'term')
   if (terms.length === 1 && ps.length === 1) {
     const t = terms[0] as Part & { type: 'term' }
-    if (isMonomial(t)) return readTerm(t)
+    if (isMonomial(t)) return readTerm(t, true)
     if (t.nodes.length === 1) return shortType(t.nodes[0])
     const log = logRowPhrase({ kind: 'row', id: '', children: t.nodes })
     if (log) return (t.sign === '-' ? '负 ' : t.sign === '+' ? '正 ' : '') + log
     const atomsOnly = t.nodes.every((x) => x.kind === 'atom')
     const hasParen = t.nodes.some((x) => x.kind === 'atom' && '()[]'.includes(x.value))
-    if (atomsOnly && !hasParen) return readTerm(t)
+    if (atomsOnly && !hasParen) return readTerm(t, true)
     // 含括号的纯原子乘积（如 (a+b)c）整体是一项，L0 不拆读（A4）
     if (atomsOnly) return '一项'
     return termDesc(t)
@@ -537,11 +694,11 @@ function descriptor(n: Node): string {
     const terms = ps.filter((p) => p.type === 'term')
     if (ps.length === 1 && terms.length === 1) {
       const t = terms[0] as Part & { type: 'term' }
-      if (isMonomial(t)) return readTerm(t)
+      if (isMonomial(t)) return readTerm(t, true)
       if (t.nodes.length === 1) return typeWithScale(t.nodes[0])
       const log = logRowPhrase({ kind: 'row', id: '', children: t.nodes })
       if (log) return (t.sign === '-' ? '负 ' : t.sign === '+' ? '正 ' : '') + log
-      if (t.nodes.every((x) => x.kind === 'atom')) return readTerm(t)
+      if (t.nodes.every((x) => x.kind === 'atom')) return readTerm(t, true)
       return termDesc(t)
     }
     const lm = joinBits(structLandmarks(n, true), squaredBit(n))
@@ -641,7 +798,7 @@ function readFull(n: Node): string {
     case 'matrix': {
       const m = n.rows.length
       const cols = n.rows[0]?.length ?? 0
-      const rows = n.rows.map((r, i) => `第${cn(i + 1)}行 ${r.map(readRow).join('，')}`)
+      const rows = n.rows.map((r, i) => `第${cn(i + 1)}行 ${r.map((c) => readRow(c)).join('，')}`)
       return `${cn(m, true)}行${cn(cols, true)}列矩阵：${rows.join('；')}`
     }
     case 'cases': {
@@ -709,7 +866,7 @@ function l1(n: Node): string {
       const descs = terms.map((p) => {
         const log = logRowPhrase({ kind: 'row', id: '', children: p.nodes })
         if (log) return (p.sign === '-' ? '负 ' : p.sign === '+' ? '正 ' : '') + log
-        return isMonomial(p) ? readTerm(p) : termDesc(p)
+        return isMonomial(p) ? readTerm(p, true) : termDesc(p)
       })
       const conn = connPhrase(n)
       return `共${cn(terms.length, true)}项：${descs.join('；')}${conn ? '，' + conn : ''}。`
@@ -841,10 +998,10 @@ export function l1GrandchildLeaks(n: Node): string[] {
         if (p.type === 'conn') continue
         const log = logRowPhrase({ kind: 'row', id: '', children: p.nodes })
         if (log) pieces.push({ desc: log, sub: { kind: 'row', id: '', children: p.nodes } })
-        else if (isMonomial(p)) pieces.push({ desc: readTerm(p), sub: { kind: 'row', id: '', children: p.nodes } })
+        else if (isMonomial(p)) pieces.push({ desc: readTerm(p, true), sub: { kind: 'row', id: '', children: p.nodes } })
         else if (p.nodes.length === 1) pieces.push({ desc: typeWithScale(p.nodes[0]), sub: p.nodes[0] })
         else if (p.nodes.every((x) => x.kind === 'atom'))
-          pieces.push({ desc: readTerm(p), sub: { kind: 'row', id: '', children: p.nodes } })
+          pieces.push({ desc: readTerm(p, true), sub: { kind: 'row', id: '', children: p.nodes } })
         else pieces.push({ desc: termDesc(p), sub: { kind: 'row', id: '', children: p.nodes } })
       }
     }

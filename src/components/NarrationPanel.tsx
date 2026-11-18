@@ -27,7 +27,14 @@ export default function NarrationPanel({ path, node, rootDetail, isRoot, error }
     return (
       <section className="panel" aria-label="朗读区">
         <h2>朗读区</h2>
-        <p role="alert">{error ?? '暂无可朗读的内容。'}</p>
+        {error ? (
+          <>
+            <p role="alert">该公式含暂不支持的结构，可查看但不能朗读。</p>
+            <p className="muted">原因：{error}</p>
+          </>
+        ) : (
+          <p role="alert">暂无可朗读的内容。</p>
+        )}
         <p className="muted">
           支持的结构：分式、根号、上下标、求和/积分（含上下限）、矩阵、分段函数。
         </p>

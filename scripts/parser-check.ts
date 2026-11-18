@@ -1,6 +1,6 @@
 // M2 修订自检：npm run check:parser（esbuild 打包后 node 运行，不引入测试框架）
 import katex from 'katex'
-import { findNode, parse, type Node, type RowNode } from '../src/lib/parser'
+import { findNode, parse, SYMBOL_WHITELIST, type Node, type RowNode } from '../src/lib/parser'
 import { hasForbidden, l1GrandchildLeaks, narrate, narrateLayers, zhNumbers } from '../src/lib/narrate'
 import { toWrappedLatex } from '../src/lib/renderTex'
 import { breadcrumbOf, buildIndex, resolveSelected } from '../src/lib/address'
@@ -211,15 +211,15 @@ check('空输入为空行', parse('').ok && (parse('') as { ok: true; node: RowN
 // 第四节乘法与函数应用（A2：隐式乘法不读乘以；相邻结构读乘以）
 check('A2 数字×字母不读乘以', narrate(mustParse('2a'), 2) === '二a' && !narrate(mustParse('2a'), 2).includes('乘以'))
 check('A2 字母连写不读乘以', narrate(mustParse('4ac'), 2) === '四ac')
-check('A2 数字×括号不读乘以', !narrate(mustParse('2(x+1)'), 2).includes('乘以'), narrate(mustParse('2(x+1)'), 2))
-check('A2 字母×括号不读乘以', !narrate(mustParse('n(n+1)'), 2).includes('乘以'), narrate(mustParse('n(n+1)'), 2))
+check('P1 数字×两项组名词化', narrate(mustParse('2(x+1)'), 2) === '二 乘以 x 与 一 的和' && !narrate(mustParse('2(x+1)'), 2).includes('左括号'), narrate(mustParse('2(x+1)'), 2))
+check('P1 字母×两项组名词化', narrate(mustParse('n(n+1)'), 2) === 'n 乘以 n 与 一 的和', narrate(mustParse('n(n+1)'), 2))
 check('显式乘号仍读乘以', narrate(mustParse('2\\times 3'), 2).includes('乘以'))
 check('A2 相邻矩阵读乘以', narrate(mustParse('\\begin{pmatrix}1\\end{pmatrix}\\begin{pmatrix}2\\end{pmatrix}'), 2).includes('乘以'))
 check('A2 相邻分式读乘以', narrate(mustParse('\\frac{1}{2}\\frac{3}{4}'), 2).includes('乘以'))
 check('sin x 函数应用', narrate(mustParse('\\sin x'), 2) === '正弦x')
 check('sin^2 x 函数应用', narrate(mustParse('\\sin^{2}x'), 2) === '正弦 的平方x')
 check('A7 f(x) 不读括号', narrate(mustParse('f(x)=x'), 2).startsWith('f x'), narrate(mustParse('f(x)=x'), 2))
-check('A7 优先级括号仍读', narrate(mustParse('(a+b)c'), 2).includes('左括号'), narrate(mustParse('(a+b)c'), 2))
+check('P1 乘积位置两项组名词化', narrate(mustParse('(a+b)c'), 2) === 'a 与 b 的和 乘以 c' && !narrate(mustParse('(a+b)c'), 2).includes('左括号'), narrate(mustParse('(a+b)c'), 2))
 check('A7 分段 L2 无左括号', !narrate(mustParse(CASES), 2).includes('左括号'), narrate(mustParse(CASES), 2))
 check('A7 末尾数字读二不误读两', narrate(mustParse('\\sqrt{\\foo{1}+2}'), 2) === '根号下 foo 一 加 二', narrate(mustParse('\\sqrt{\\foo{1}+2}'), 2))
 check('A7 根号指数无空格', narrate(mustParse(ROOT), 0).includes('一个三次根号'), narrate(mustParse(ROOT), 0))
@@ -231,7 +231,7 @@ check('A4 积分语序', narrate(mustParse(INT), 2).includes('x 从 零 到 一�
 check('A4 无句末变量括注', !narrate(mustParse(SUM), 2).includes('（变量') && !narrate(mustParse(INT), 2).includes('（微分变量'), narrate(mustParse(SUM), 2))
 check('A4 巴塞尔 L2 开头', narrate(mustParse('\\sum_{n=1}^{\\infty}\\frac{1}{n^{2}}=\\frac{\\pi^{2}}{6}'), 2).startsWith('n 从 一 到 无穷'), narrate(mustParse('\\sum_{n=1}^{\\infty}\\frac{1}{n^{2}}=\\frac{\\pi^{2}}{6}'), 2))
 check('求和变量抽取', narrate(firstKind(mustParse(SUM), 'bigop')!, 0).includes('变量 i'), narrate(firstKind(mustParse(SUM), 'bigop')!, 0))
-check('隐式乘法静默', narrate(mustParse(SUM), 2).includes('n左括号 n 加 一 右括号'), narrate(mustParse(SUM), 2))
+check('P1 求和分子连乘名词化', narrate(mustParse(SUM), 2).includes('n 乘以 n 与 一 的和 乘以 二n 与 一 的和'), narrate(mustParse(SUM), 2))
 
 // A3 分数口语化
 check('A3 1/n² 口语化', narrate(mustParse('\\frac{1}{n^{2}}'), 2) === 'n 的平方分之一', narrate(mustParse('\\frac{1}{n^{2}}'), 2))
@@ -320,7 +320,7 @@ check('M2.1 A4 (a+b)c 报一项', parenProdL0.includes('一项') && !parenProdL0
 check('M2.1 A4 括号外仍切项', narrate(mustParse('(a+b)c+d'), 0).includes('两项'), narrate(mustParse('(a+b)c+d'), 0))
 const fracParen = mustParse('\\frac{(a+b)}{2}')
 check('M2.1 A4 分子含括号不切碎', narrate(fracParen, 0).includes('分子一项'), narrate(fracParen, 0))
-check('M2.1 A4 分子含括号正常读', narrate(fracParen, 2).includes('分子为 左括号 a 加 b 右括号，分母为 二'), narrate(fracParen, 2))
+check('P1 分子整体括号不读', narrate(fracParen, 2).includes('分子为 a 加 b，分母为 二') && !narrate(fracParen, 2).includes('左括号'), narrate(fracParen, 2))
 check('M2.1 A4 括号内 pm 不切项', narrate(mustParse('(a\\pm b)c'), 0).includes('一项'), narrate(mustParse('(a\\pm b)c'), 0))
 
 // M2.1 A3：插桩不得新增任何样式（KaTeX 自身 strut 度量允许减少；宽度/位置差在浏览器实测 <2px）
@@ -470,6 +470,124 @@ check('S2 修饰符读未支持的符号', narrate(mustParse('\\hat{a}'), 2) ===
 check('S2 修饰符不读参数内容', !narrate(mustParse('\\bar{x}'), 2).includes('x'), narrate(mustParse('\\bar{x}'), 2))
 check('S2 非 ARITY 仍念符号名', narrate(mustParse('\\foo'), 2) === 'foo')
 check('S2 多修饰符各计一次', parse('\\hat{a}+\\vec{v}').ok && (parse('\\hat{a}+\\vec{v}') as { unknown: string[] }).unknown.length === 2)
+
+// P1 括号降噪：不读（安全语境整体）→ 名词化（乘除/幂位置两项组）→ 保留（嵌套≥2 或 ≥3 项）
+const C03 = '(a+b)^{2}=a^{2}+2ab+b^{2}'
+const C26 = 'A=P(1+\\frac{r}{n})^{nt}'
+check('P1 C03 细节无左括号', !narrate(mustParse(C03), 2).includes('左括号'), narrate(mustParse(C03), 2))
+check('P1 C03 细节句', narrate(mustParse(C03), 2) === 'a 与 b 的和 的平方 等于 a 的平方 加 二ab 加 b 的平方', narrate(mustParse(C03), 2))
+check('P1 C26 细节无左括号', !narrate(mustParse(C26), 2).includes('左括号'), narrate(mustParse(C26), 2))
+check('P1 C26 细节句', narrate(mustParse(C26), 2) === 'A 等于 P 乘以 一 与 n分之r 的和 的 nt 次方', narrate(mustParse(C26), 2))
+check('P1 幂位置名词化', narrate(mustParse('(a+b)^{2}'), 2) === 'a 与 b 的和 的平方', narrate(mustParse('(a+b)^{2}'), 2))
+check('P1 相邻两项组', narrate(mustParse('(a+b)(a-b)'), 2) === 'a 与 b 的和 乘以 a 与 b 的差', narrate(mustParse('(a+b)(a-b)'), 2))
+check('P1 嵌套保留括号', narrate(mustParse('(a+(b+c))d'), 2).includes('左括号'), narrate(mustParse('(a+(b+c))d'), 2))
+check('P1 三项组保留括号', narrate(mustParse('(a+b+c)d'), 2).includes('左括号'), narrate(mustParse('(a+b+c)d'), 2))
+check('P1 整式最外层不读', narrate(mustParse('(a+b)'), 2) === 'a 加 b', narrate(mustParse('(a+b)'), 2))
+check('P1 分母整体不读', narrate(mustParse('\\frac{1}{(1-x)}'), 2) === '一 减 x分之一', narrate(mustParse('\\frac{1}{(1-x)}'), 2))
+check('P1 一元负号保留括号', narrate(mustParse('-(a+b)'), 2) === '负 左括号 a 加 b 右括号', narrate(mustParse('-(a+b)'), 2))
+check('P1 减号后保留括号', narrate(mustParse('c-(a+b)'), 2) === 'c 减 左括号 a 加 b 右括号', narrate(mustParse('c-(a+b)'), 2))
+check('P1 除法位置名词化', narrate(mustParse('1/(1-x)'), 2) === '一 除以 一 与 x 的差', narrate(mustParse('1/(1-x)'), 2))
+check('P1 积名词化', narrate(mustParse('(a\\times b)^{2}'), 2) === 'a 与 b 的积 的平方', narrate(mustParse('(a\\times b)^{2}'), 2))
+check('P1 商名词化', narrate(mustParse('(a/b)^{2}'), 2) === 'a 与 b 的商 的平方', narrate(mustParse('(a/b)^{2}'), 2))
+check('P1 函数参数仍静默', narrate(mustParse('f(a+b)'), 2) === 'f a 加 b', narrate(mustParse('f(a+b)'), 2))
+check('P1 不通顺退化保留括号', narrate(mustParse('(a+\\begin{pmatrix}1\\end{pmatrix})d'), 2).includes('左括号'), narrate(mustParse('(a+\\begin{pmatrix}1\\end{pmatrix})d'), 2))
+for (const tex of [C03, C26, '(a+b)(a-b)', '(a+(b+c))d', '(a+b+c)d', '2(x+1)', '\\frac{(a+b)}{2}', '1/(1-x)']) {
+  for (const node of allNodes(mustParse(tex))) {
+    const leaks = l1GrandchildLeaks(node)
+    check(`P1+A6 括号无泄漏 ${node.id || '根'}@${tex.slice(0, 10)}`, leaks.length === 0, leaks.join(','))
+  }
+}
+
+// P2-b 白名单扩充：希腊变体、关系/集合/箭头、函数名、间距静默、转义字面符
+check('P2-b 白名单约200', SYMBOL_WHITELIST.length >= 195 && SYMBOL_WHITELIST.length <= 215, String(SYMBOL_WHITELIST.length))
+const GREEK_READ: [string, string][] = [
+  ['varepsilon', '艾普西隆'], ['varphi', '斐'], ['chi', '希'], ['psi', '普西'], ['rho', '柔'],
+  ['tau', '陶'], ['nu', '纽'], ['xi', '克西'], ['zeta', '泽塔'], ['eta', '伊塔'], ['kappa', '卡帕'],
+  ['epsilon', '艾普西隆'], ['upsilon', '宇普西隆'], ['phi', '斐'], ['iota', '约塔'],
+  ['Theta', '大写西塔'], ['Pi', '大写圆周率'], ['Phi', '大写斐'], ['Psi', '大写普西'], ['Xi', '大写克西'], ['Upsilon', '大写宇普西隆'],
+]
+for (const [cmd, read] of GREEK_READ) {
+  check(`P2-b 希腊 ${cmd}`, narrate(mustParse('\\' + cmd), 2) === read, narrate(mustParse('\\' + cmd), 2))
+}
+const SYMBOL_READ: [string, string][] = [
+  ['ll', '远小于'], ['gg', '远大于'], ['subsetneq', '真包含于'], ['supsetneq', '真包含'],
+  ['setminus', '差集'], ['mid', '给定'], ['langle', '左角括号'], ['rangle', '右角括号'],
+  ['lfloor', '左下取整括号'], ['rfloor', '右下取整括号'], ['lceil', '左上取整括号'], ['rceil', '右上取整括号'],
+  ['dagger', '匕首符号'], ['det', '行列式'], ['dim', '维数'], ['gcd', '最大公约数'],
+  ['max', '最大值'], ['min', '最小值'], ['sup', '上确界'], ['inf', '下确界'],
+  ['arcsin', '反正弦'], ['arccos', '反余弦'], ['arctan', '反正切'],
+]
+for (const [cmd, read] of SYMBOL_READ) {
+  check(`P2-b 符号 ${cmd}`, narrate(mustParse('\\' + cmd), 2) === read, narrate(mustParse('\\' + cmd), 2))
+}
+const epsDelta = '\\forall \\varepsilon>0,\\ \\exists \\delta>0'
+const epsR = parse(epsDelta)
+check('P2-b ε-δ 零未知', epsR.ok && epsR.unknown.length === 0, epsR.ok ? JSON.stringify(epsR.unknown) : epsR.error)
+check('P2-b ε-δ 读艾普西隆', narrate(mustParse(epsDelta), 2).includes('艾普西隆'), narrate(mustParse(epsDelta), 2))
+const bayes = 'P(A\\mid B)=\\frac{P(B\\mid A)P(A)}{P(B)}'
+const bayesR = parse(bayes)
+check('P2-b 贝叶斯零未知', bayesR.ok && bayesR.unknown.length === 0, bayesR.ok ? JSON.stringify(bayesR.unknown) : bayesR.error)
+check('P2-b 贝叶斯读给定', narrate(mustParse(bayes), 2).includes('给定'), narrate(mustParse(bayes), 2))
+check('P2-b 取整括号', narrate(mustParse('\\lfloor x \\rfloor'), 2) === '左下取整括号 x 右下取整括号', narrate(mustParse('\\lfloor x \\rfloor'), 2))
+check('P2-b quad 静默', narrate(mustParse('x>0 \\quad y>0'), 2) === 'x 大于 零 y 大于 零', narrate(mustParse('x>0 \\quad y>0'), 2))
+check('P2-b qquad 静默', narrate(mustParse('a \\qquad b'), 2) === 'a b', narrate(mustParse('a \\qquad b'), 2))
+check('P2-b limits 透明', narrate(mustParse('\\sum\\limits_{i=1}^{n} i'), 2) === narrate(mustParse('\\sum_{i=1}^{n} i'), 2))
+check('P2-b displaystyle 透明', narrate(mustParse('\\displaystyle \\frac{1}{2}'), 2) === '二分之一', narrate(mustParse('\\displaystyle \\frac{1}{2}'), 2))
+check('P2-b 转义百分号', narrate(mustParse('50\\%'), 2) === '五十 百分号', narrate(mustParse('50\\%'), 2))
+const setBuilder = '\\{x \\mid x>0\\}'
+check('P2-b 转义花括号', narrate(mustParse(setBuilder), 2) === '左花括号 x 给定 x 大于 零 右花括号', narrate(mustParse(setBuilder), 2))
+check('P2-b 名单外仍计未知', parse('\\foo').ok && (parse('\\foo') as { unknown: string[] }).unknown[0] === 'foo')
+
+// P2-c ARITY 扩充：新命令吞参读「未支持的符号」并计未知
+for (const cmd of ['mathbf', 'widetilde', 'boxed', 'phantom', 'hbox', 'textbf', 'substack']) {
+  const r = parse('\\' + cmd + '{x}')
+  check(`P2-c ${cmd} 吞一参`, r.ok && r.unknown.length === 1 && r.unknown[0] === cmd, r.ok ? JSON.stringify(r.unknown) : r.error)
+  check(`P2-c ${cmd} 读未支持的符号`, narrate(mustParse('\\' + cmd + '{x}'), 2) === '未支持的符号')
+}
+for (const cmd of ['overset', 'underset', 'stackrel']) {
+  const r = parse('\\' + cmd + '{a}{b}')
+  check(`P2-c ${cmd} 吞两参`, r.ok && r.unknown.length === 1 && r.unknown[0] === cmd, r.ok ? JSON.stringify(r.unknown) : r.error)
+  check(`P2-c ${cmd} 不读参数`, narrate(mustParse('\\' + cmd + '{a}{b}'), 2) === '未支持的符号')
+}
+const colorR = parse('\\color{red} x')
+check('P2-c color 吞色参留正文', colorR.ok && colorR.unknown.length === 1 && colorR.unknown[0] === 'color', colorR.ok ? JSON.stringify(colorR.unknown) : colorR.error)
+check('P2-c color 正文仍可读', narrate(mustParse('\\color{red} x'), 2) === '未支持的符号 x', narrate(mustParse('\\color{red} x'), 2))
+const textZh = 'y=\\text{当 x 大于零}'
+check('P2-c text 不逐字拼读', narrate(mustParse(textZh), 2) === 'y 等于 未支持的符号', narrate(mustParse(textZh), 2))
+const substackSum = '\\sum_{\\substack{i<n\\\\ j<n}} a_{ij}'
+const subR = parse(substackSum)
+check('P2-c 多行 substack 可解析', subR.ok && subR.unknown.includes('substack'), subR.ok ? JSON.stringify(subR.unknown) : subR.error)
+check('P2-c 多行 substack 读未支持的符号', narrate(mustParse(substackSum), 2).includes('未支持的符号'), narrate(mustParse(substackSum), 2))
+
+// P2-a 解析失败降级：aligned 等环境返回失败与原因（UI 用原始 LaTeX 交 KaTeX 渲染）
+const alignedR = parse('\\begin{aligned}a&=b\\\\ c&=d\\end{aligned}')
+check('P2-a aligned 解析失败带原因', !alignedR.ok && alignedR.error.includes('aligned'), alignedR.ok ? '竟然解析成功' : alignedR.error)
+
+// P2 验收：随机 10 条真实公式，逐条记录未朗读符号数，中位数 ≤2
+const RANDOM10: [string, string][] = [
+  ['R01 ε-δ 定义', '\\forall \\varepsilon>0,\\ \\exists \\delta>0,\\ |x-a|<\\delta \\Rightarrow |f(x)-f(a)|<\\varepsilon'],
+  ['R02 欧拉恒等式', 'e^{i\\pi}+1=0'],
+  ['R03 高斯积分', '\\int_{-\\infty}^{\\infty} e^{-x^{2}} dx=\\sqrt{\\pi}'],
+  ['R04 贝叶斯公式', 'P(A\\mid B)=\\frac{P(B\\mid A)P(A)}{P(B)}'],
+  ['R05 柯西-施瓦茨', '\\left(\\sum_{i=1}^{n} a_i b_i\\right)^{2} \\leq \\left(\\sum_{i=1}^{n} a_i^{2}\\right)\\left(\\sum_{i=1}^{n} b_i^{2}\\right)'],
+  ['R06 取整不等式', '\\lfloor x \\rfloor \\leq x < \\lceil x \\rceil'],
+  ['R07 行列式乘法', '\\det(AB)=\\det(A)\\det(B)'],
+  ['R08 最大公约数最小公倍数', '\\gcd(a,b)\\cdot \\mathrm{lcm}(a,b)=ab'],
+  ['R09 正态密度', 'f(x)=\\frac{1}{\\sigma\\sqrt{2\\pi}} e^{-\\frac{(x-\\mu)^{2}}{2\\sigma^{2}}}'],
+  ['R10 二项式定理', '(a+b)^{n}=\\sum_{k=0}^{n} \\binom{n}{k} a^{k} b^{n-k}'],
+]
+const unknownCounts: number[] = []
+for (const [name, tex] of RANDOM10) {
+  const r = parse(tex)
+  check(`P2 随机10 ${name} 可解析`, r.ok, r.ok ? '' : r.error)
+  const cnt = r.ok ? r.unknown.length : -1
+  unknownCounts.push(cnt)
+  check(`P2 随机10 ${name} 未朗读≤2`, cnt >= 0 && cnt <= 2, String(cnt))
+}
+const sorted = [...unknownCounts].sort((a, b) => a - b)
+const median = (sorted[4] + sorted[5]) / 2
+check('P2 随机10 未朗读中位数≤2', median <= 2, `中位数=${median} 明细=${unknownCounts.join(',')}`)
+console.log(`随机10条未朗读明细：${RANDOM10.map(([n], i) => `${n}=${unknownCounts[i]}`).join('；')}；中位数=${median}`)
 
 if (failed) {
   throw new Error(`共 ${failed} 项失败`)

@@ -104,6 +104,7 @@ export default function App() {
         <h2>渲染区</h2>
         <FormulaView
           tree={parsed.ok ? parsed.node : undefined}
+          rawLatex={parsed.ok ? undefined : latex}
           selectedId={selectedId}
           index={index}
           onSelect={select}

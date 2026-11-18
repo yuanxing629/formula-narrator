@@ -99,14 +99,41 @@ export const SYMBOL_WHITELIST = [
   'oplus', 'otimes', 'odot', 'vee', 'wedge', 'neg', 'land', 'lor', 'implies', 'iff',
   'therefore', 'because', 'cdots', 'ldots', 'vdots', 'ddots', 'dots',
   'log', 'ln', 'sin', 'cos', 'tan', 'exp',
+  // P2-b 扩充：希腊字母变体与其余小写、大写
+  'epsilon', 'varepsilon', 'upsilon', 'phi', 'varphi', 'iota', 'chi', 'psi', 'rho', 'tau',
+  'nu', 'xi', 'zeta', 'eta', 'kappa', 'vartheta', 'varrho', 'varsigma', 'varpi',
+  'Theta', 'Pi', 'Phi', 'Psi', 'Xi', 'Upsilon',
+  // 关系
+  'll', 'gg', 'leqslant', 'geqslant', 'lesssim', 'gtrsim', 'asymp', 'doteq',
+  // 集合与定界符
+  'subsetneq', 'supsetneq', 'setminus', 'mid', 'nmid', 'langle', 'rangle',
+  'lfloor', 'rfloor', 'lceil', 'rceil', 'dagger', 'complement',
+  // 箭头
+  'longrightarrow', 'longleftarrow', 'Longrightarrow', 'Longleftarrow',
+  'longleftrightarrow', 'Longleftrightarrow', 'uparrow', 'downarrow', 'updownarrow',
+  'nearrow', 'searrow', 'swarrow', 'nwarrow', 'hookrightarrow', 'rightharpoonup',
+  // 大运算符（按符号读，不做上下限结构解析）
+  'bigcup', 'bigcap', 'iint', 'iiint', 'oint', 'oiint', 'bigoplus', 'bigotimes',
+  'bigodot', 'bigvee', 'bigwedge', 'bigsqcup', 'coprod',
+  // 函数名
+  'det', 'dim', 'gcd', 'max', 'min', 'sup', 'inf', 'arcsin', 'arccos', 'arctan',
+  'sinh', 'cosh', 'tanh', 'cot', 'sec', 'csc', 'coth', 'arg', 'deg', 'hom', 'ker',
+  'limsup', 'liminf', 'Pr',
+  // 其它常用符号
+  'hbar', 'ell', 'Re', 'Im', 'aleph', 'beth', 'wp', 'top', 'bot', 'vdash', 'models',
+  'simeq', 'bowtie', 'lvert', 'rvert', 'lVert', 'rVert', 'backslash', 'colon',
+  // 间距：朗读中静默
+  'quad', 'qquad',
 ]
 
 // 白名单外带参命令的参数个数：解析时按 arity 吞掉紧邻参数，整体作为一个「未支持的符号」原子。
 // 不吞参会把参数误读成独立因子（如 \binom{n}{k} 读成「n 乘以 k」），语义全错且无提示。
 const ARITY: Record<string, number> = {
   binom: 2,
-  operatorname: 1, mathrm: 1, mathbb: 1, mathcal: 1, text: 1,
-  hat: 1, bar: 1, vec: 1, dot: 1, ddot: 1, tilde: 1, widehat: 1, overline: 1, underline: 1,
+  operatorname: 1, mathrm: 1, mathbf: 1, mathbb: 1, mathcal: 1, text: 1, textbf: 1,
+  hat: 1, bar: 1, vec: 1, dot: 1, ddot: 1, tilde: 1, widehat: 1, widetilde: 1,
+  overline: 1, underline: 1, boxed: 1, phantom: 1, hbox: 1, substack: 1,
+  color: 1, overset: 2, underset: 2, stackrel: 2,
 }
 
 function tokenize(src: string): Tok[] {
@@ -128,8 +155,16 @@ function tokenize(src: string): Tok[] {
       const m = /^[a-zA-Z]+/.exec(src.slice(i + 1))
       if (m) {
         i += 1 + m[0].length
-        // \left \right 只影响定界符大小，结构上透明
-        if (m[0] !== 'left' && m[0] !== 'right') toks.push({ t: 'cmd', v: m[0], pos: start, end: i })
+        // \left \right 只影响定界符大小；\limits \nolimits 只影响上下限位置；
+        // \displaystyle 等只影响字号——结构上均透明，跳过
+        const transparent = ['left', 'right', 'limits', 'nolimits', 'displaystyle', 'textstyle', 'scriptstyle', 'scriptscriptstyle']
+        if (!transparent.includes(m[0])) toks.push({ t: 'cmd', v: m[0], pos: start, end: i })
+        continue
+      }
+      // 转义字面符 \% \{ \} \$ \# \& \_：按普通字符处理
+      if ('%{}$#&_'.includes(src[i + 1] ?? '')) {
+        i += 2
+        toks.push({ t: 'char', v: '\\' + src[i - 1], pos: start, end: i })
         continue
       }
       // \\, \\; \\! 等间距命令：跳过
@@ -230,6 +265,22 @@ class Parser {
     return { kind: 'row', id: '', children: [this.parseAtom()] }
   }
 
+  /** 未支持命令的吞参：按花括号深度整段吞掉，容忍参数内的 & 与 \\（如多行 \substack） */
+  private swallowArg() {
+    if (this.peek().t === 'open') {
+      this.next()
+      let depth = 1
+      while (depth > 0) {
+        const t = this.next()
+        if (t.t === 'eof') throw new ParseError('语法错误：未支持的命令缺少完整参数')
+        if (t.t === 'open') depth++
+        else if (t.t === 'close') depth--
+      }
+    } else {
+      this.parseAtom()
+    }
+  }
+
   private parseAtom(): Node {
     const tok = this.next()
     if (tok.t === 'num' || tok.t === 'char') return { kind: 'atom', id: '', value: tok.v }
@@ -289,7 +340,7 @@ class Parser {
         if (!SYMBOL_WHITELIST.includes(tok.v)) this.unknown.push(tok.v)
         const arity = ARITY[tok.v]
         if (arity !== undefined) {
-          for (let a = 0; a < arity; a++) this.parseArg()
+          for (let a = 0; a < arity; a++) this.swallowArg()
           const last = this.toks[this.pos - 1]
           return { kind: 'atom', id: '', value: this.src.slice(tok.pos, last.end), unsupported: true }
         }
