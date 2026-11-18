@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import FormulaView from './components/FormulaView'
 import NarrationPanel from './components/NarrationPanel'
 import { defaultPreset, findPreset, presets } from './data/presets'
+import { narrateLayers } from './lib/narrate'
+import { parse } from './lib/parser'
 
 function initialLatex(): string {
   const f = new URLSearchParams(window.location.search).get('f')
@@ -17,6 +19,9 @@ function syncUrl(latex: string) {
 export default function App() {
   const [latex, setLatex] = useState(initialLatex)
   const preset = findPreset(latex)
+  const parsed = useMemo(() => parse(latex), [latex])
+  const layers = parsed.ok ? narrateLayers(parsed.node) : undefined
+  const unknownCount = parsed.ok ? parsed.unknown.length : 0
 
   const update = (tex: string) => {
     setLatex(tex)
@@ -67,11 +72,21 @@ export default function App() {
         <FormulaView latex={latex} />
       </section>
 
-      <NarrationPanel preset={preset} />
+      <NarrationPanel
+        title={preset?.name ?? '自定义公式'}
+        layers={layers}
+        error={parsed.ok ? undefined : parsed.error}
+      />
 
       <footer className="muted">
         纯前端静态页面 · 不请求任何第三方服务 · 语音不可用时文本完整可读
       </footer>
+
+      {unknownCount > 0 && (
+        <p className="corner-note" role="status">
+          有 {unknownCount} 个符号未能朗读
+        </p>
+      )}
     </main>
   )
 }

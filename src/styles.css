@@ -154,6 +154,19 @@ footer {
   text-align: center;
 }
 
+.corner-note {
+  position: fixed;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  margin: 0;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: #fff;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 @media (max-width: 480px) {
   .hero h1 {
     font-size: 1.5rem;
