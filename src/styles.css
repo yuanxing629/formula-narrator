@@ -109,6 +109,151 @@ textarea {
   overflow-x: auto;
   padding: 0.5rem 0;
   font-size: 1.25rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent) var(--accent-soft);
+}
+
+.formula-view::-webkit-scrollbar {
+  height: 8px;
+}
+
+.formula-view::-webkit-scrollbar-track {
+  background: var(--accent-soft);
+  border-radius: 4px;
+}
+
+.formula-view::-webkit-scrollbar-thumb {
+  background: var(--accent);
+  border-radius: 4px;
+}
+
+/* KaTeX 的 vlist 表格单元（position:relative）会盖在分母等小号内联字形之上拦截点击，
+   令其穿透，命中落到下方的 [data-node] 与字形上；pointer-events 不改变排版（A3）。 */
+.formula-view .vlist-t,
+.formula-view .vlist-r,
+.formula-view .vlist {
+  pointer-events: none;
+}
+
+/* 点选目标：不加 padding（任何内边距都会撑宽嵌套结构、改变排版），
+   小目标由 .fn-tiny::after 绝对定位外扩热区 */
+.formula-view [data-node] {
+  cursor: pointer;
+  position: relative;
+  border-radius: 4px;
+  pointer-events: auto;
+}
+
+.formula-view [data-node].fn-tiny::after {
+  content: '';
+  position: absolute;
+  inset: -0.4em -0.4em;
+}
+
+.formula-view [data-node]:hover {
+  background: var(--accent-soft);
+}
+
+.formula-view [data-node]:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.formula-view [data-node].fn-selected {
+  background: var(--accent-soft);
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.formula-view [data-node].fn-ancestor {
+  outline: 1px dashed #93c5fd;
+  outline-offset: 1px;
+}
+
+.breadcrumb {
+  margin-top: 0.5rem;
+}
+
+.breadcrumb ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.breadcrumb li {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.crumb-sep {
+  color: var(--muted);
+}
+
+.crumb {
+  padding: 0.25rem 0.6rem;
+  min-height: 2.5rem;
+  font-size: 0.9rem;
+  border-radius: 0.4rem;
+}
+
+.crumb.current {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.node-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.node-actions button {
+  min-height: 2.5rem;
+  padding: 0.4rem 1.1rem;
+}
+
+.node-actions .primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.node-actions .primary:hover {
+  background: #1d4ed8;
+  color: #fff;
+}
+
+.node-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.script-area {
+  margin-top: 0.4rem;
+  font-family: inherit;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  background: var(--bg);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .layer {
@@ -174,5 +319,10 @@ footer {
 
   .layer-head button {
     margin-left: 0;
+    min-height: 2.5rem;
+  }
+
+  .formula-view {
+    font-size: 1.1rem;
   }
 }

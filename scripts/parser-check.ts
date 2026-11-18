@@ -1,6 +1,9 @@
-// M1 修订自检：npm run check:parser（esbuild 打包后 node 运行，不引入测试框架）
+// M2 修订自检：npm run check:parser（esbuild 打包后 node 运行，不引入测试框架）
+import katex from 'katex'
 import { findNode, parse, type Node, type RowNode } from '../src/lib/parser'
-import { narrate, narrateLayers } from '../src/lib/narrate'
+import { l1GrandchildLeaks, narrate, narrateLayers, READ_FORBIDDEN } from '../src/lib/narrate'
+import { toWrappedLatex } from '../src/lib/renderTex'
+import { breadcrumbOf, buildIndex, resolveSelected } from '../src/lib/address'
 import { presets } from '../src/data/presets'
 
 let failed = 0
@@ -64,6 +67,49 @@ function firstKind(node: Node, kind: Node['kind']): Node | undefined {
   return undefined
 }
 
+function allNodes(root: Node): Node[] {
+  const out: Node[] = [root]
+  const kids: Node[] = []
+  switch (root.kind) {
+    case 'row':
+      kids.push(...root.children)
+      break
+    case 'group':
+      kids.push(root.child)
+      break
+    case 'frac':
+      kids.push(root.num, root.den)
+      break
+    case 'sqrt':
+      if (root.index) kids.push(root.index)
+      kids.push(root.body)
+      break
+    case 'scripts':
+      kids.push(root.base)
+      if (root.sup) kids.push(root.sup)
+      if (root.sub) kids.push(root.sub)
+      break
+    case 'bigop':
+      if (root.lower) kids.push(root.lower)
+      if (root.upper) kids.push(root.upper)
+      kids.push(root.body)
+      break
+    case 'matrix':
+      root.rows.forEach((r) => kids.push(...r))
+      break
+    case 'cases':
+      root.rows.forEach((r) => {
+        kids.push(r.value)
+        if (r.cond) kids.push(r.cond)
+      })
+      break
+    case 'atom':
+      break
+  }
+  for (const k of kids) out.push(...allNodes(k))
+  return out
+}
+
 const QUAD = 'x=\\frac{-b\\pm\\sqrt{b^{2}-4ac}}{2a}'
 const SUM = '\\sum_{i=1}^{n}i^{2}=\\frac{n(n+1)(2n+1)}{6}'
 const CASES = 'f(x)=\\begin{cases}x^{2}, & x\\geq 0\\\\ -x, & x<0\\end{cases}'
@@ -71,13 +117,16 @@ const MATRIX = 'A=\\begin{pmatrix}1 & 2\\\\ 3 & 4\\end{pmatrix}'
 const INT = '\\int_{0}^{1}2x\\,dx=1'
 const ROOT = 'c=\\sqrt[3]{a^{3}+b^{3}}'
 
-// 示例：可解析、三层齐备、L1≠L2、TTS 措辞合规
+// 示例：可解析、三层齐备、L1≠L2、TTS 措辞合规、内部术语与阿拉伯数字零出现
 const loneCheng = /(?<!相)乘(?!以)/u
 for (const p of presets) {
   check(`示例可解析 ${p.id}`, parse(p.latex).ok)
   check(`示例三层文本 ${p.id}`, !!p.skeleton && !!p.local && !!p.detail)
   check(`L1≠L2 ${p.id}`, p.local !== p.detail)
   check(`TTS 无孤立乘 ${p.id}`, !loneCheng.test(p.skeleton + p.local + p.detail))
+  const all = p.skeleton + p.local + p.detail
+  check(`A1 朗读词表分离 ${p.id}`, READ_FORBIDDEN.every((w) => !all.includes(w)), all)
+  check(`A7 无阿拉伯数字 ${p.id}`, !/[0-9]/.test(all), all)
 }
 
 // 6 类结构节点齐备
@@ -99,28 +148,52 @@ if (frac?.kind === 'frac') {
   const L1 = narrate(frac, 1)
   const L2 = narrate(frac, 2)
   check('L0 含分式', L0.includes('分式'), L0)
-  check('L0 分子三项', L0.includes('分子 3 项'), L0)
-  check('L0 含一个根号', L0.includes('含 1 个根号'), L0)
-  check('L0 分母单项 2a', L0.includes('分母单项 2a'), L0)
+  check('A5 L0 分子两项', L0.includes('分子两项') && !L0.includes('3 项'), L0)
+  check('A5 L0 加减号连接', L0.includes('中间用加减号连接'), L0)
+  check('L0 含一个根号', L0.includes('含一个根号'), L0)
+  check('A1 L0 分母读内容', L0.includes('分母是二a'), L0)
+  check('L1(分式) 报分子规模', L1.includes('分子是一个两项的式子'), L1)
   const numL1 = narrate(frac.num, 1)
   check('L1(分子) 不读根号内部', !numL1.includes('b 的平方'), numL1)
-  check('L1(分子) 报三项', numL1.includes('共 3 项'), numL1)
+  check('A5 L1(分子) 报两项', numL1.includes('共两项'), numL1)
   const sqrtNode = firstKind(frac, 'sqrt')!
   const sqrtL2 = narrate(sqrtNode, 2)
-  check('L2(根号) 读到叶子', sqrtL2.includes('b 的平方 减 4ac'), sqrtL2)
+  check('L2(根号) 读到叶子', sqrtL2.includes('b 的平方 减 四ac'), sqrtL2)
   check('L2(根号) 判别式语义', sqrtL2.includes('判别式'), sqrtL2)
-  check('分式三层长度单调', L0.length < L1.length && L1.length < L2.length, `${L0.length}/${L1.length}/${L2.length}`)
+  check('A3 L2 分式无「分式：」前缀', !L2.startsWith('分式：') && L2.includes('分子为'), L2)
 }
-const rL = narrateLayers(quad)
-check('整式三层长度单调', rL.skeleton.length < rL.local.length && rL.local.length < rL.detail.length, `${rL.skeleton.length}/${rL.local.length}/${rL.detail.length}`)
 check('任意节点可独立 narrate', narrate(firstKind(quad, 'sqrt')!, 0).includes('根号'))
+
+// A6：L1 不得读孙节点内容（按支 token 交集为空），替代旧「字符长度单调」断言
+const leakFormulae = [
+  QUAD,
+  SUM,
+  CASES,
+  MATRIX,
+  INT,
+  ROOT,
+  'a^{2}+b^{2}=c^{2}',
+  '\\sum_{n=1}^{\\infty}\\frac{1}{n^{2}}=\\frac{\\pi^{2}}{6}',
+  '\\begin{pmatrix}1 & 2\\\\ 3 & 4\\end{pmatrix}\\begin{pmatrix}0 & 1\\\\ 1 & 0\\end{pmatrix}=\\begin{pmatrix}2 & 1\\\\ 4 & 3\\end{pmatrix}',
+]
+let leakChecked = 0
+for (const tex of leakFormulae) {
+  for (const node of allNodes(mustParse(tex))) {
+    const leaks = l1GrandchildLeaks(node)
+    check(`A6 L1 无孙节点泄漏 ${node.id || '根'}@${tex.slice(0, 12)}`, leaks.length === 0, leaks.join(','))
+    leakChecked++
+  }
+}
+check('A6 泄漏检查覆盖节点数', leakChecked > 100, String(leakChecked))
 
 // 第二节骨架重写
 check('根号骨架给规模地标', narrate(firstKind(quad, 'sqrt')!, 0).includes('平方项'))
 check('上下标骨架直接给读法', narrate(mustParse('x^{n}'), 0) === 'x 的 n 次方。', narrate(mustParse('x^{n}'), 0))
 check('下标骨架直接给读法', narrate(mustParse('a_{i}'), 0) === 'a 下标 i。', narrate(mustParse('a_{i}'), 0))
 check('分段骨架无大括号', !narrate(mustParse(CASES), 0).includes('大括号'))
-check('矩阵骨架报行列', narrate(mustParse(MATRIX), 0).includes('2 行 2 列'))
+check('矩阵骨架报行列', narrate(mustParse(MATRIX), 0).includes('两行两列'))
+check('A1 幂给具体读法', narrate(mustParse('y=c^{2}'), 1).includes('右边是c 的平方'), narrate(mustParse('y=c^{2}'), 1))
+check('A1 指数是 n', narrate(mustParse('x^{n}'), 1).includes('指数是n'), narrate(mustParse('x^{n}'), 1))
 
 // 第三节容错
 const degraded = parse('\\foo{1}+\\bar{x}')
@@ -134,45 +207,127 @@ check('环境不匹配报错', !parse('\\begin{cases}1 & 2\\end{matrix}').ok)
 check('不支持环境报错', !parse('\\begin{align}1\\end{align}').ok)
 check('空输入为空行', parse('').ok && (parse('') as { ok: true; node: RowNode }).node.children.length === 0)
 
-// 第四节乘法与函数应用
-check('2a 不读乘以', narrate(mustParse('2a'), 2) === '2a')
-check('4ac 不读乘以', narrate(mustParse('4ac'), 2) === '4ac')
+// 第四节乘法与函数应用（A2：隐式乘法不读乘以；相邻结构读乘以）
+check('A2 数字×字母不读乘以', narrate(mustParse('2a'), 2) === '二a' && !narrate(mustParse('2a'), 2).includes('乘以'))
+check('A2 字母连写不读乘以', narrate(mustParse('4ac'), 2) === '四ac')
+check('A2 数字×括号不读乘以', !narrate(mustParse('2(x+1)'), 2).includes('乘以'), narrate(mustParse('2(x+1)'), 2))
+check('A2 字母×括号不读乘以', !narrate(mustParse('n(n+1)'), 2).includes('乘以'), narrate(mustParse('n(n+1)'), 2))
 check('显式乘号仍读乘以', narrate(mustParse('2\\times 3'), 2).includes('乘以'))
+check('A2 相邻矩阵读乘以', narrate(mustParse('\\begin{pmatrix}1\\end{pmatrix}\\begin{pmatrix}2\\end{pmatrix}'), 2).includes('乘以'))
+check('A2 相邻分式读乘以', narrate(mustParse('\\frac{1}{2}\\frac{3}{4}'), 2).includes('乘以'))
 check('sin x 函数应用', narrate(mustParse('\\sin x'), 2) === '正弦x')
 check('sin^2 x 函数应用', narrate(mustParse('\\sin^{2}x'), 2) === '正弦 的平方x')
-check('f(x) 不插乘以', narrate(mustParse('f(x)=x'), 2).startsWith('f左括号'))
-const timesCount = presets.reduce((c, p) => c + (p.skeleton + p.local + p.detail).split('乘以').length - 1, 0)
-check('全篇乘以次数下降为 0', timesCount === 0, String(timesCount))
+check('A7 f(x) 不读括号', narrate(mustParse('f(x)=x'), 2).startsWith('f x'), narrate(mustParse('f(x)=x'), 2))
+check('A7 优先级括号仍读', narrate(mustParse('(a+b)c'), 2).includes('左括号'), narrate(mustParse('(a+b)c'), 2))
+check('A7 分段 L2 无左括号', !narrate(mustParse(CASES), 2).includes('左括号'), narrate(mustParse(CASES), 2))
+check('A7 末尾数字读二不误读两', narrate(mustParse('\\sqrt{\\foo{1}+2}'), 2) === '根号下 foo 一 加 二', narrate(mustParse('\\sqrt{\\foo{1}+2}'), 2))
+check('A7 根号指数无空格', narrate(mustParse(ROOT), 0).includes('一个三次根号'), narrate(mustParse(ROOT), 0))
 
-// 第五节语序
-check('cases 先条件后取值', narrate(mustParse(CASES), 2).includes('当 x 大于等于 0 时，值为 x 的平方'))
-check('求和口语语序', narrate(mustParse(SUM), 2).includes('对 i 的平方 从 1 到 n 求和'), narrate(mustParse(SUM), 2))
-check('积分口语语序', narrate(mustParse(INT), 2).includes('对 2x 从 0 到 1 积分'), narrate(mustParse(INT), 2))
-check('积分微分变量', narrate(mustParse(INT), 2).includes('微分变量 x'))
+// 第五节语序（A4：变量在前，去掉句末「（变量 n）」）
+check('cases 先条件后取值', narrate(mustParse(CASES), 2).includes('当 x 大于等于 零 时，值为 x 的平方'))
+check('A4 求和语序', narrate(mustParse(SUM), 2).includes('i 从 一 到 n，对 i 的平方 求和'), narrate(mustParse(SUM), 2))
+check('A4 积分语序', narrate(mustParse(INT), 2).includes('x 从 零 到 一，对 二x 积分'), narrate(mustParse(INT), 2))
+check('A4 无句末变量括注', !narrate(mustParse(SUM), 2).includes('（变量') && !narrate(mustParse(INT), 2).includes('（微分变量'), narrate(mustParse(SUM), 2))
+check('A4 巴塞尔 L2 开头', narrate(mustParse('\\sum_{n=1}^{\\infty}\\frac{1}{n^{2}}=\\frac{\\pi^{2}}{6}'), 2).startsWith('n 从 一 到 无穷'), narrate(mustParse('\\sum_{n=1}^{\\infty}\\frac{1}{n^{2}}=\\frac{\\pi^{2}}{6}'), 2))
 check('求和变量抽取', narrate(firstKind(mustParse(SUM), 'bigop')!, 0).includes('变量 i'), narrate(firstKind(mustParse(SUM), 'bigop')!, 0))
-check('隐式乘法静默', narrate(mustParse(SUM), 2).includes('n左括号 n 加 1 右括号'), narrate(mustParse(SUM), 2))
+check('隐式乘法静默', narrate(mustParse(SUM), 2).includes('n左括号 n 加 一 右括号'), narrate(mustParse(SUM), 2))
+
+// A3 分数口语化
+check('A3 1/n² 口语化', narrate(mustParse('\\frac{1}{n^{2}}'), 2) === 'n 的平方分之一', narrate(mustParse('\\frac{1}{n^{2}}'), 2))
+check('A3 巴塞尔 L2 含 n 的平方分之一', narrate(mustParse('\\sum_{n=1}^{\\infty}\\frac{1}{n^{2}}=\\frac{\\pi^{2}}{6}'), 2).includes('n 的平方分之一'))
+check('A3 单项分子口语化', narrate(mustParse('\\frac{2x}{3}'), 2) === '三分之二x', narrate(mustParse('\\frac{2x}{3}'), 2))
+check('A3 多项分子保留分子分母', narrate(mustParse('\\frac{a+b}{c}'), 2) === '分子为 a 加 b，分母为 c', narrate(mustParse('\\frac{a+b}{c}'), 2))
 
 // 其余读法回归
 check('一元负号读负', narrateLayers(quad).detail.includes('负 b'))
 check('平方读平方', narrate(mustParse('x^{2}'), 2).includes('x 的平方'))
-check('三次根式读法', narrate(mustParse(ROOT), 2).includes('3 次根号下'))
-check('矩阵细节报行列', narrate(mustParse(MATRIX), 2).includes('2 行 2 列矩阵'))
+check('三次根式读法', narrate(mustParse(ROOT), 2).includes('三次根号下'), narrate(mustParse(ROOT), 2))
+check('矩阵细节报行列', narrate(mustParse(MATRIX), 2).includes('两行两列矩阵'))
 
-// 实测记录回归：三层长度单调、地标不重复、分隔逗号不朗读
-function mono(latex: string, name: string) {
-  const l = narrateLayers(mustParse(latex))
-  check(`${name}三层长度单调`, l.skeleton.length < l.local.length && l.local.length < l.detail.length, `${l.skeleton.length}/${l.local.length}/${l.detail.length}`)
-}
+// 实测记录回归：地标不重复、分隔逗号不朗读（长度单调断言已按 A6 删除）
 const pyth = narrateLayers(mustParse('a^{2}+b^{2}=c^{2}'))
-check('勾股定理 L0<L1', pyth.skeleton.length < pyth.local.length, `${pyth.skeleton.length}/${pyth.local.length}`)
 check('勾股定理 L2 为纯读法', pyth.detail === 'a 的平方 加 b 的平方 等于 c 的平方', pyth.detail)
 check('勾股定理 L1≠L2', pyth.local !== pyth.detail)
-mono('\\begin{pmatrix}1 & 2\\\\ 3 & 4\\end{pmatrix}\\begin{pmatrix}0 & 1\\\\ 1 & 0\\end{pmatrix}=\\begin{pmatrix}2 & 1\\\\ 4 & 3\\end{pmatrix}', '矩阵乘法')
-mono(CASES, '分段函数')
-mono('\\sum_{n=1}^{\\infty}\\frac{1}{n^{2}}=\\frac{\\pi^{2}}{6}', '巴塞尔级数')
 const matMulL0 = narrate(mustParse('\\begin{pmatrix}1 & 2\\\\ 3 & 4\\end{pmatrix}\\begin{pmatrix}0 & 1\\\\ 1 & 0\\end{pmatrix}=\\begin{pmatrix}2 & 1\\\\ 4 & 3\\end{pmatrix}'), 0)
-check('矩阵等式 L0 不重复报数', !matMulL0.includes('含 3 个矩阵'), matMulL0)
+check('矩阵等式 L0 不重复报数', !matMulL0.includes('含三个矩阵'), matMulL0)
+check('A1 矩阵等式 L0 无内部术语', READ_FORBIDDEN.every((w) => !matMulL0.includes(w)), matMulL0)
 check('cases 值行不读分隔逗号', !narrate(mustParse(CASES), 2).includes('逗号'), narrate(mustParse(CASES), 2))
+
+// B1 渲染映射：htmlData 包裹后 KaTeX DOM 保留全部非原子节点 id，值无引号转义
+const KATEX_OPTS = {
+  trust: (ctx: { command: string }) => ctx.command === '\\htmlData',
+  strict: 'ignore' as const,
+  output: 'htmlAndMathml' as const,
+  throwOnError: false,
+}
+for (const tex of [QUAD, SUM, CASES, MATRIX, INT, ROOT]) {
+  const tree = mustParse(tex) as RowNode
+  const html = katex.renderToString(toWrappedLatex(tree), KATEX_OPTS)
+  const ids = new Set([...html.matchAll(/data-node="([^"]+)"/g)].map((m) => m[1]))
+  const expected = allNodes(tree).filter((n) => n.kind !== 'atom').map((n) => n.id)
+  check(`B1 htmlData 全覆盖 ${tex.slice(0, 10)}`, expected.every((id) => ids.has(id)), `缺 ${expected.filter((id) => !ids.has(id)).join(',')}`)
+  check(`B1 值无引号转义 ${tex.slice(0, 10)}`, !html.includes('&quot;'))
+  check(`B1 渲染无错误色 ${tex.slice(0, 10)}`, !html.includes('katex-error') && !html.includes('color: #cc0000'))
+}
+
+// B3 面包屑：求根公式根号路径＝等式 › 右边 › 分式 › 分子 › 根号；侧别虚拟节点可朗读
+const quadTree = mustParse(QUAD) as RowNode
+const quadIndex = buildIndex(quadTree)
+const sqrtId = allNodes(quadTree).find((n) => n.kind === 'sqrt')!.id
+const crumbs = breadcrumbOf(quadIndex, sqrtId)
+check('B3 根号面包屑', crumbs.map((c) => c.label).join(' › ') === '等式 › 右边 › 分式 › 分子 › 根号', crumbs.map((c) => c.label).join(' › '))
+const rightNode = resolveSelected(quadTree, '0:R')
+check('B3 右边虚拟节点可朗读', narrate(rightNode, 0).includes('分式'), narrate(rightNode, 0))
+check('B3 根节点面包屑', breadcrumbOf(quadIndex, '0').map((c) => c.label).join('') === '等式')
+check('B3 表达式根显示整式', breadcrumbOf(buildIndex(mustParse('\\begin{pmatrix}1 & 2\\\\ 3 & 4\\end{pmatrix}') as RowNode), '0')[0].label === '整式')
+
+// M2.1 A1：L0 只能比 L1 粗，不能比 L1 空——底数/指数皆原子时骨架给具体读法
+const pythL0 = narrate(mustParse('a^{2}+b^{2}=c^{2}'), 0)
+check('M2.1 A1 勾股 L0 含 c 的平方', pythL0.includes('c 的平方'), pythL0)
+check('M2.1 A1 勾股 L0 不含一个幂', !pythL0.includes('一个幂'), pythL0)
+const polyExpL0 = narrate(mustParse('y=x^{n+1}'), 0)
+check('M2.1 A1 指数非原子仍报一个幂', polyExpL0.includes('一个幂'), polyExpL0)
+const sumBigop = allNodes(mustParse(SUM)).find((n) => n.kind === 'bigop')!
+check('M2.1 A1 求和骨架读具体平方', narrate(sumBigop, 0).includes('求和项是i 的平方'), narrate(sumBigop, 0))
+
+// M2.1 A2：乘积项按因子个数出词，不再出现「等相乘」病句
+const matMulTex = '\\begin{pmatrix}1 & 2\\\\ 3 & 4\\end{pmatrix}\\begin{pmatrix}0 & 1\\\\ 1 & 0\\end{pmatrix}=\\begin{pmatrix}2 & 1\\\\ 4 & 3\\end{pmatrix}'
+const matMulL1 = narrate(mustParse(matMulTex), 1)
+check('M2.1 A2 矩阵乘法 L0 两个…相乘', matMulL0.includes('两个两行两列矩阵相乘'), matMulL0)
+check('M2.1 A2 矩阵乘法 L0 无等相乘', !matMulL0.includes('等相乘'), matMulL0)
+check('M2.1 A2 矩阵乘法 L1 无病句', !/是一个.*相乘/.test(matMulL1), matMulL1)
+const mixedL0 = narrate(mustParse('\\begin{pmatrix}1 & 2\\\\ 3 & 4\\end{pmatrix}\\frac{1}{2}'), 0)
+check('M2.1 A2 混合两因子读乘以', mixedL0.includes('一个两行两列矩阵 乘以 一个分式'), mixedL0)
+const tripleL0 = narrate(mustParse('\\begin{pmatrix}1\\end{pmatrix}\\frac{1}{2}\\sqrt{2}'), 0)
+check('M2.1 A2 混合三因子报个数', tripleL0.includes('三个因子相乘'), tripleL0)
+const tripleSameL0 = narrate(mustParse('\\begin{pmatrix}1\\end{pmatrix}\\begin{pmatrix}2\\end{pmatrix}\\begin{pmatrix}3\\end{pmatrix}'), 0)
+check('M2.1 A2 同类型三因子报类型', tripleSameL0.includes('三个一行一列矩阵相乘'), tripleSameL0)
+for (const tex of [QUAD, SUM, CASES, MATRIX, INT, ROOT, matMulTex]) {
+  const tree = mustParse(tex)
+  for (const n of allNodes(tree)) {
+    for (const lv of [0, 1, 2] as const) {
+      const s = narrate(n, lv)
+      if (s.includes('等相乘')) check(`M2.1 A2 全节点无等相乘 ${n.id} L${lv}`, false, s)
+    }
+  }
+}
+check('M2.1 A2 全节点无等相乘', true)
+
+// M2.1 A4：括号内加减号不切项；(a+b)c 是一项乘积
+const parenProdL0 = narrate(mustParse('(a+b)c'), 0)
+check('M2.1 A4 (a+b)c 报一项', parenProdL0.includes('一项') && !parenProdL0.includes('两项'), parenProdL0)
+check('M2.1 A4 括号外仍切项', narrate(mustParse('(a+b)c+d'), 0).includes('两项'), narrate(mustParse('(a+b)c+d'), 0))
+const fracParen = mustParse('\\frac{(a+b)}{2}')
+check('M2.1 A4 分子含括号不切碎', narrate(fracParen, 0).includes('分子一项'), narrate(fracParen, 0))
+check('M2.1 A4 分子含括号正常读', narrate(fracParen, 2).includes('分子为 左括号 a 加 b 右括号，分母为 二'), narrate(fracParen, 2))
+check('M2.1 A4 括号内 pm 不切项', narrate(mustParse('(a\\pm b)c'), 0).includes('一项'), narrate(mustParse('(a\\pm b)c'), 0))
+
+// M2.1 A3：插桩不得新增任何样式（KaTeX 自身 strut 度量允许减少；宽度/位置差在浏览器实测 <2px）
+const quadHtml = katex.renderToString(toWrappedLatex(mustParse(QUAD) as RowNode), KATEX_OPTS)
+const plainHtml = katex.renderToString(QUAD, KATEX_OPTS)
+const stylesOf = (h: string) => new Set(h.match(/style="[^"]*"/g) ?? [])
+const plainStyles = stylesOf(plainHtml)
+check('M2.1 A3 插桩不新增样式', [...stylesOf(quadHtml)].every((s) => plainStyles.has(s)))
 
 if (failed) {
   throw new Error(`共 ${failed} 项失败`)

@@ -1,3 +1,5 @@
+（历史记录，已被 M2 覆盖）
+
 # M1 修订实测记录（5 条真实公式）
 
 > 生成方式：`npm run check:parser` 同一套 `parse` + `narrateLayers` 代码，Node 端逐条输出（脚本见 `node_modules/.cache/m1-report.ts`，不入库）。

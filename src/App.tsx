@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react'
 import FormulaView from './components/FormulaView'
 import NarrationPanel from './components/NarrationPanel'
+import Breadcrumb from './components/Breadcrumb'
 import { defaultPreset, findPreset, presets } from './data/presets'
-import { narrateLayers } from './lib/narrate'
+import { narrate } from './lib/narrate'
 import { parse } from './lib/parser'
+import { breadcrumbOf, buildIndex, parseSideId, resolveSelected, sideLabel, type AddrEntry } from './lib/address'
 
 function initialLatex(): string {
   const f = new URLSearchParams(window.location.search).get('f')
@@ -18,14 +20,33 @@ function syncUrl(latex: string) {
 
 export default function App() {
   const [latex, setLatex] = useState(initialLatex)
+  // 选中状态不持久化：刷新后回到根节点（展开记忆是 M3）
+  const [selectedId, setSelectedId] = useState('0')
+  const [liveMsg, setLiveMsg] = useState('')
   const preset = findPreset(latex)
   const parsed = useMemo(() => parse(latex), [latex])
-  const layers = parsed.ok ? narrateLayers(parsed.node) : undefined
+  const index = useMemo(
+    () => (parsed.ok ? buildIndex(parsed.node) : new Map<string, AddrEntry>()),
+    [parsed],
+  )
   const unknownCount = parsed.ok ? parsed.unknown.length : 0
+
+  const selectedNode = parsed.ok ? resolveSelected(parsed.node, selectedId) : undefined
+  const crumbs = parsed.ok ? breadcrumbOf(index, selectedId) : []
+  const path = crumbs.map((c) => c.label).join(' › ')
+  const rootDetail = parsed.ok ? narrate(parsed.node, 2) : undefined
 
   const update = (tex: string) => {
     setLatex(tex)
+    setSelectedId('0')
     syncUrl(tex)
+  }
+
+  const select = (id: string) => {
+    setSelectedId(id)
+    const side = parseSideId(id)
+    const label = side ? sideLabel(side.side) : index.get(id)?.label ?? '整式'
+    setLiveMsg(`已选中：${label}`)
   }
 
   return (
@@ -37,7 +58,7 @@ export default function App() {
         </p>
         <ol className="guide" aria-label="30 秒看懂">
           <li>看渲染区：公式长什么样，一眼有数。</li>
-          <li>听朗读区：骨架 → 局部 → 细节，同一公式三种粒度，按需播放。</li>
+          <li>点任意结构：高亮 + 面包屑定位，骨架 → 局部 → 细节，只听这一支。</li>
           <li>换示例或粘贴 LaTeX：状态自动存进网址，可直接分享链接。</li>
         </ol>
       </header>
@@ -69,12 +90,21 @@ export default function App() {
 
       <section className="panel" aria-label="渲染区">
         <h2>渲染区</h2>
-        <FormulaView latex={latex} />
+        <FormulaView
+          tree={parsed.ok ? parsed.node : undefined}
+          selectedId={selectedId}
+          index={index}
+          onSelect={select}
+        />
+        <Breadcrumb crumbs={crumbs} onSelect={select} />
+        <p className="muted">点公式里的任意结构，或用 Tab + 回车选中；面包屑可点回上层。</p>
       </section>
 
       <NarrationPanel
-        title={preset?.name ?? '自定义公式'}
-        layers={layers}
+        path={path || preset?.name || '自定义公式'}
+        node={selectedNode}
+        rootDetail={rootDetail}
+        isRoot={selectedId === '0'}
         error={parsed.ok ? undefined : parsed.error}
       />
 
@@ -87,6 +117,10 @@ export default function App() {
           有 {unknownCount} 个符号未能朗读
         </p>
       )}
+
+      <div className="sr-only" aria-live="polite">
+        {liveMsg}
+      </div>
     </main>
   )
 }

@@ -3,9 +3,22 @@
 // L2 细节 = 被点名的那一支读到叶子；L3 从头读 = 独立顺序朗读动作（M2+ 实现）。
 // 任意节点均可独立调用 narrate(node, level)，整式只是根节点。
 
-import type { BigopNode, Node, RowNode } from './parser'
+import type { BigopNode, Node, RowNode, ScriptsNode } from './parser'
 
 export type Level = 0 | 1 | 2
+
+/** 内部术语不得进入朗读文本（G6）；自检对全部输出断言 */
+export const READ_FORBIDDEN = ['项式', '单项', '规模', '地标', '结构', '节点']
+
+const CN_DIGITS = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九']
+
+/** 模板计数转中文数字（G10）：量词前 2 读「两」，其余读「二」；原子字面值（2a、4ac）不转换 */
+export function cn(n: number, measure = false): string {
+  if (n === 2) return measure ? '两' : '二'
+  if (n < 10) return CN_DIGITS[n]
+  if (n < 20) return '十' + (n % 10 ? CN_DIGITS[n % 10] : '')
+  return CN_DIGITS[Math.floor(n / 10)] + '十' + (n % 10 ? CN_DIGITS[n % 10] : '')
+}
 
 export interface Layers {
   skeleton: string
@@ -138,7 +151,8 @@ type Part =
   | { type: 'term'; sign: string; binary?: string; nodes: Node[] }
   | { type: 'conn'; op: string }
 
-/** 按加减号切项；\pm/\mp 作为连接符单独成项；行首/连接符后为一元符号，其余为二元运算符 */
+/** 按加减号切项；\pm/\mp 是连接符，不计入项数（D4）；行首/连接符后为一元符号；
+ *  括号内的加减号不切项（A4）：(a+b)c 是一个乘积，只算一项 */
 function parts(row: RowNode): Part[] {
   const out: Part[] = []
   let cur: { type: 'term'; sign: string; binary?: string; nodes: Node[] } = {
@@ -150,15 +164,23 @@ function parts(row: RowNode): Part[] {
     if (cur.nodes.length || cur.sign || cur.binary) out.push(cur)
     cur = { type: 'term', sign: '', nodes: [] }
   }
+  let parenDepth = 0
   for (const child of row.children) {
-    if (child.kind === 'atom' && (child.value === '+' || child.value === '-')) {
+    if (child.kind === 'atom' && (child.value === '(' || child.value === '[')) parenDepth++
+    else if (child.kind === 'atom' && (child.value === ')' || child.value === ']'))
+      parenDepth = Math.max(0, parenDepth - 1)
+    if (parenDepth === 0 && child.kind === 'atom' && (child.value === '+' || child.value === '-')) {
       if (cur.nodes.length) {
         flush()
         cur.binary = child.value
       } else {
         cur.sign = child.value
       }
-    } else if (child.kind === 'atom' && (child.value === '\\pm' || child.value === '\\mp')) {
+    } else if (
+      parenDepth === 0 &&
+      child.kind === 'atom' &&
+      (child.value === '\\pm' || child.value === '\\mp')
+    ) {
       flush()
       out.push({ type: 'conn', op: child.value })
     } else {
@@ -173,19 +195,55 @@ function isMonomial(p: Part): boolean {
   return p.type === 'term' && p.nodes.length > 0 && p.nodes.every(isAlnum)
 }
 
-/** 项内连读：乘号默认不读；仅数字×数字读「乘以」；函数应用不插乘 */
+/** 项数只数 term，\pm/\mp 连接符不计入（A5/D4） */
+function termCount(row: RowNode): number {
+  return parts(row).filter((p) => p.type === 'term').length
+}
+
+/** 多个 term 之间的连接符说法；无连接符返回空 */
+function connPhrase(row: RowNode): string {
+  const conns = parts(row).filter((p): p is Part & { type: 'conn' } => p.type === 'conn')
+  if (!conns.length) return ''
+  const words = [...new Set(conns.map((c) => (c.op === '\\pm' ? '加减号' : c.op === '\\mp' ? '减加号' : '')))]
+  return words.length ? `中间用${words.join('和')}连接` : ''
+}
+
+function isStruct(n: Node): boolean {
+  return n.kind === 'frac' || n.kind === 'sqrt' || n.kind === 'bigop' || n.kind === 'matrix'
+}
+
+/** 项内连读：隐式乘法（数字×字母、字母×括号、数字×括号）不读乘以；相邻结构节点读「乘以」（G2）；函数调用不读括号（G9） */
 function readNodes(nodes: Node[]): string {
   let s = ''
   let prev: Node | undefined
+  let fnParen = 0
   for (const n of nodes) {
+    if (prev && isFunc(prev) && n.kind === 'group') {
+      s += readRow(n.child)
+      prev = n
+      continue
+    }
+    if (n.kind === 'atom' && n.value === '(' && prev && isFunc(prev) && fnParen === 0) {
+      fnParen = 1
+      prev = n
+      continue
+    }
+    if (fnParen > 0 && n.kind === 'atom' && (n.value === '(' || n.value === ')')) {
+      fnParen += n.value === '(' ? 1 : -1
+      if (fnParen === 0) {
+        prev = n
+        continue
+      }
+    }
     const piece = readFull(n)
     if (prev) {
       const bothNum = isNum(prev) && isNum(n)
       const fnApp = isFunc(prev) && (isAlnum(n) || (n.kind === 'atom' && n.value === '('))
-      const silent =
+      const implicit =
         !bothNum &&
         (fnApp || (isAlnum(prev) && (isAlnum(n) || (n.kind === 'atom' && n.value === '('))))
-      s += bothNum ? ' 乘以 ' : silent ? '' : ' '
+      const structAdj = isStruct(prev) && isStruct(n)
+      s += bothNum || structAdj ? ' 乘以 ' : implicit ? '' : ' '
     }
     s += piece
     prev = n
@@ -215,6 +273,7 @@ function expText(sup: RowNode): string {
   const only = sup.children.length === 1 && sup.children[0].kind === 'atom' ? sup.children[0].value : ''
   if (only === '2') return '平方'
   if (only === '3') return '立方'
+  if (/^[0-9]+$/.test(only)) return `${cn(Number(only))} 次方`
   return ` ${readRow(sup)} 次方`
 }
 
@@ -315,11 +374,11 @@ function structLandmarks(n: Node, withFrac: boolean): string {
     mat += countKind(k, 'matrix')
     cas += countKind(k, 'cases')
   }
-  if (sqrt) bits.push(`含 ${sqrt} 个根号`)
-  if (withFrac && frac) bits.push(`含 ${frac} 个分式`)
-  if (big) bits.push(`含 ${big} 个求和或积分`)
-  if (mat) bits.push(`含 ${mat} 个矩阵`)
-  if (cas) bits.push(`含 ${cas} 个分段`)
+  if (sqrt) bits.push(`含${cn(sqrt, true)}个根号`)
+  if (withFrac && frac) bits.push(`含${cn(frac, true)}个分式`)
+  if (big) bits.push(`含${cn(big, true)}个求和或积分`)
+  if (mat) bits.push(`含${cn(mat, true)}个矩阵`)
+  if (cas) bits.push(`含${cn(cas, true)}个分段`)
   return bits.join('，')
 }
 
@@ -328,7 +387,7 @@ const BIGOP_NAME = { sum: '求和', int: '积分', prod: '连乘', lim: '极限'
 function squaredBit(n: Node): string {
   let sq = 0
   for (const k of childrenOf(n)) sq += countSquared(k)
-  return sq ? `含 ${sq} 个平方项` : ''
+  return sq ? `含${cn(sq, true)}个平方项` : ''
 }
 
 function joinBits(...bits: string[]): string {
@@ -366,15 +425,15 @@ function shortType(n: Node): string {
     case 'frac':
       return '一个分式'
     case 'sqrt':
-      return n.index ? `一个 ${readRow(n.index)} 次根号` : '一个根号'
+      return n.index ? `一个${readRow(n.index)}次根号` : '一个根号'
     case 'scripts':
-      return '一个幂'
+      return scriptsConcrete(n) ?? '一个幂'
     case 'bigop':
       return `一个${BIGOP_NAME[n.op]}`
     case 'matrix':
-      return `一个 ${n.rows.length} 行 ${n.rows[0]?.length ?? 0} 列矩阵`
+      return `一个${cn(n.rows.length, true)}行${cn(n.rows[0]?.length ?? 0, true)}列矩阵`
     case 'cases':
-      return `一个 ${n.rows.length} 段分段表达式`
+      return `一个${cn(n.rows.length, true)}段分段表达式`
     case 'group':
       return shortType(n.child)
     case 'row':
@@ -384,20 +443,34 @@ function shortType(n: Node): string {
   }
 }
 
-/** 规模：单项读内容（地标），其余报项数 + 地标 */
+/** 底数与指数都是原子时给具体读法（「c 的平方」），否则只报类型，避免 L1 泄漏孙节点内容 */
+function scriptsConcrete(n: ScriptsNode): string | undefined {
+  const supAtom = n.sup?.children.length === 1 && n.sup.children[0].kind === 'atom' ? n.sup.children[0] : undefined
+  if (n.base.kind === 'atom' && supAtom && !n.sub) return readFull(n)
+  return undefined
+}
+
+/** 规模：单项读内容，其余报项数 + 连接符 + 地标 */
 function scale(row: RowNode): string {
   const ps = parts(row)
   const terms = ps.filter((p) => p.type === 'term')
   if (terms.length === 1 && ps.length === 1) {
     const t = terms[0] as Part & { type: 'term' }
-    if (isMonomial(t)) return `单项 ${readTerm(t)}`
+    if (isMonomial(t)) return readTerm(t)
     if (t.nodes.length === 1) return shortType(t.nodes[0])
+    const atomsOnly = t.nodes.every((x) => x.kind === 'atom')
+    const hasParen = t.nodes.some((x) => x.kind === 'atom' && '()[]'.includes(x.value))
+    if (atomsOnly && !hasParen) return readTerm(t)
+    // 含括号的纯原子乘积（如 (a+b)c）整体是一项，L0 不拆读（A4）
+    if (atomsOnly) return '一项'
+    return termDesc(t)
   }
   const lm = joinBits(structLandmarks(row, true), squaredBit(row))
-  return `${ps.length} 项${lm ? '，' + lm : ''}`
+  const conn = connPhrase(row)
+  return `${cn(ps.filter((p) => p.type === 'term').length, true)}项${conn ? '，' + conn : ''}${lm ? '，' + lm : ''}`
 }
 
-/** L1 用的子结构描述：叶子/单项读内容；复合结构只给类型 + 自身直接规模，不读孙节点 */
+/** L1 用的子结构描述：叶子/单项读内容；复合结构只给类型 + 自身直接项数，不读孙节点 */
 function descriptor(n: Node): string {
   if (n.kind === 'atom') return readAtom(n.value)
   if (n.kind === 'row') {
@@ -405,27 +478,33 @@ function descriptor(n: Node): string {
     const terms = ps.filter((p) => p.type === 'term')
     if (ps.length === 1 && terms.length === 1) {
       const t = terms[0] as Part & { type: 'term' }
-      if (isMonomial(t)) return `单项 ${readTerm(t)}`
+      if (isMonomial(t)) return readTerm(t)
       if (t.nodes.length === 1) return typeWithScale(t.nodes[0])
+      if (t.nodes.every((x) => x.kind === 'atom')) return readTerm(t)
+      return termDesc(t)
     }
     const lm = joinBits(structLandmarks(n, true), squaredBit(n))
-    return `一个 ${ps.length} 项式${lm ? '，' + lm : ''}`
+    const conn = connPhrase(n)
+    return `一个${cn(terms.length, true)}项的式子${conn ? '，' + conn : ''}${lm ? '，' + lm : ''}`
   }
   return typeWithScale(n)
 }
 
 function typeWithScale(n: Node): string {
   switch (n.kind) {
-    case 'frac':
-      return `一个分式，分子 ${parts(n.num).length} 项、分母 ${parts(n.den).length} 项`
+    case 'frac': {
+      const conn = connPhrase(n.num)
+      return `一个分式，分子${cn(termCount(n.num), true)}项${conn ? '（' + conn + '）' : ''}、分母${cn(termCount(n.den), true)}项`
+    }
     case 'matrix':
-      return `一个 ${n.rows.length} 行 ${n.rows[0]?.length ?? 0} 列矩阵`
+      return `一个${cn(n.rows.length, true)}行${cn(n.rows[0]?.length ?? 0, true)}列矩阵`
     case 'cases':
-      return `一个 ${n.rows.length} 段分段表达式`
+      return `一个${cn(n.rows.length, true)}段分段表达式`
     case 'sqrt':
-    case 'scripts':
     case 'bigop':
       return shortType(n)
+    case 'scripts':
+      return scriptsConcrete(n) ?? '一个幂'
     case 'group':
       return descriptor(n.child)
     default:
@@ -456,6 +535,14 @@ function isDiscriminant(body: RowNode): boolean {
   )
 }
 
+/** 分子是否为单个原子/单项（决定分式口语化读法，G7） */
+function simpleNum(num: RowNode): boolean {
+  const ps = parts(num)
+  if (ps.length !== 1 || ps[0].type !== 'term') return false
+  const t = ps[0]
+  return t.nodes.length > 0 && t.nodes.every(isAlnum)
+}
+
 /** L2：被点名的那一支读到叶子 */
 function readFull(n: Node): string {
   switch (n.kind) {
@@ -465,10 +552,12 @@ function readFull(n: Node): string {
       return readRow(n)
     case 'group':
       return readRow(n.child)
-    case 'frac':
-      return `分式：分子为 ${readRow(n.num)}，分母为 ${readRow(n.den)}`
+    case 'frac': {
+      if (simpleNum(n.num)) return `${readRow(n.den).trim()}分之${readRow(n.num).trim()}`
+      return `分子为 ${readRow(n.num)}，分母为 ${readRow(n.den)}`
+    }
     case 'sqrt': {
-      const head = n.index ? `${readRow(n.index)} 次根号下` : '根号下'
+      const head = n.index ? `${readRow(n.index)}次根号下` : '根号下'
       const note = isDiscriminant(n.body) ? '（即判别式）' : ''
       return `${head} ${readRow(n.body)}${note}`
     }
@@ -480,18 +569,19 @@ function readFull(n: Node): string {
     }
     case 'bigop': {
       const { variable, lowerValue, upper } = bigopVar(n)
-      const range = lowerValue && upper ? `从 ${lowerValue} 到 ${upper} ` : lowerValue ? `下限 ${lowerValue} ` : ''
-      if (n.op === 'sum') return `对 ${readRow(n.body)} ${range}求和${variable ? `（变量 ${variable}）` : ''}`
-      if (n.op === 'prod') return `对 ${readRow(n.body)} ${range}连乘${variable ? `（变量 ${variable}）` : ''}`
+      const range = lowerValue && upper ? `从 ${lowerValue} 到 ${upper}` : lowerValue ? `下限 ${lowerValue}` : ''
+      const head = variable && range ? `${variable} ${range}，` : range ? `${range}，` : ''
+      if (n.op === 'sum') return `${head}对 ${readRow(n.body)} 求和`
+      if (n.op === 'prod') return `${head}对 ${readRow(n.body)} 连乘`
       if (n.op === 'lim') return `${variable ?? ''} 趋于 ${lowerValue ?? ''} 时 ${readRow(n.body)} 的极限`
-      const { body, diffVar } = intDiff(n.body)
-      return `对 ${readRow(body)} ${range}积分${diffVar ? `（微分变量 ${diffVar}）` : ''}`
+      const { body } = intDiff(n.body)
+      return `${head}对 ${readRow(body)} 积分`
     }
     case 'matrix': {
       const m = n.rows.length
       const cols = n.rows[0]?.length ?? 0
-      const rows = n.rows.map((r, i) => `第 ${i + 1} 行 ${r.map(readRow).join('，')}`)
-      return `${m} 行 ${cols} 列矩阵：${rows.join('；')}`
+      const rows = n.rows.map((r, i) => `第${cn(i + 1)}行 ${r.map(readRow).join('，')}`)
+      return `${cn(m, true)}行${cn(cols, true)}列矩阵：${rows.join('；')}`
     }
     case 'cases': {
       const rows = n.rows.map((r) => {
@@ -520,10 +610,11 @@ function l0(n: Node): string {
       return l0(n.child)
     case 'frac': {
       const lm = structLandmarks(n, false)
-      return `分式：分子 ${parts(n.num).length} 项、分母${scale(n.den)}${lm ? '，' + lm : ''}。`
+      const conn = connPhrase(n.num)
+      return `分式：分子${cn(termCount(n.num), true)}项${conn ? '，' + conn : ''}，分母是${scale(n.den)}${lm ? '，' + lm : ''}。`
     }
     case 'sqrt':
-      return `一个${n.index ? ` ${readRow(n.index)} 次` : ''}根号，里面是${scale(n.body)}。`
+      return `一个${n.index ? `${readRow(n.index)}次` : ''}根号，里面是${scale(n.body)}。`
     case 'scripts': {
       let s = readFull(n.base)
       if (n.sup) s += ` 的${expText(n.sup)}`
@@ -538,9 +629,9 @@ function l0(n: Node): string {
       return `一个${name}：${variable ? `变量 ${variable}，` : ''}${range}，${bodyName}是${scale(n.body)}。`
     }
     case 'matrix':
-      return `一个 ${n.rows.length} 行 ${n.rows[0]?.length ?? 0} 列矩阵。`
+      return `一个${cn(n.rows.length, true)}行${cn(n.rows[0]?.length ?? 0, true)}列矩阵。`
     case 'cases':
-      return `分段表达式，共 ${n.rows.length} 种情况，每种带一个条件。`
+      return `分段表达式，共${cn(n.rows.length, true)}种情况，每种带一个条件。`
     case 'atom':
       return readAtom(n.value) + '。'
   }
@@ -553,10 +644,10 @@ function l1(n: Node): string {
       const eq = splitEq(n)
       if (eq) return `左边是${descriptor(eq.left)}；右边是${descriptor(eq.right)}。`
       const ps = parts(n)
-      const descs = ps.map((p) =>
-        p.type === 'conn' ? `${readAtom(p.op)}号` : isMonomial(p) ? readTerm(p) : termDesc(p),
-      )
-      return `共 ${ps.length} 项：${descs.join('；')}。`
+      const terms = ps.filter((p): p is Part & { type: 'term' } => p.type === 'term')
+      const descs = terms.map((p) => (isMonomial(p) ? readTerm(p) : termDesc(p)))
+      const conn = connPhrase(n)
+      return `共${cn(terms.length, true)}项：${descs.join('；')}${conn ? '，' + conn : ''}。`
     }
     case 'group':
       return l1(n.child)
@@ -565,9 +656,9 @@ function l1(n: Node): string {
     case 'sqrt':
       return `根号内是${descriptor(n.body)}。`
     case 'scripts': {
-      const bits = [`底数 ${descriptor(n.base)}`]
-      if (n.sup) bits.push(`指数 ${descriptor(n.sup)}`)
-      if (n.sub) bits.push(`下标 ${descriptor(n.sub)}`)
+      const bits = [`底数是${descriptor(n.base)}`]
+      if (n.sup) bits.push(`指数是${descriptor(n.sup)}`)
+      if (n.sub) bits.push(`下标是${descriptor(n.sub)}`)
       return bits.join('，') + '。'
     }
     case 'bigop': {
@@ -578,13 +669,13 @@ function l1(n: Node): string {
       return bits.join('，') + '。'
     }
     case 'matrix':
-      return n.rows.map((r, i) => `第 ${i + 1} 行 ${r.length} 个元素`).join('；') + '。'
+      return n.rows.map((r, i) => `第${cn(i + 1)}行${cn(r.length, true)}个元素`).join('；') + '。'
     case 'cases':
       return (
         n.rows
           .map((r, i) => {
             const cond = r.cond ? `条件 ${readRow(r.cond)}，` : ''
-            return `第 ${i + 1} 种：${cond}值是${descriptor(stripTrailingPunct(r.value))}`
+            return `第${cn(i + 1)}种：${cond}值是${descriptor(stripTrailingPunct(r.value))}`
           })
           .join('；') + '。'
       )
@@ -593,18 +684,120 @@ function l1(n: Node): string {
   }
 }
 
+/** 乘积项描述（A2）：同类型因子报「N 个××相乘」，混合两个报「A 乘以 B」，更多报「N 个因子相乘」 */
 function termDesc(p: Part & { type: 'term' }): string {
   if (p.nodes.length === 1) return typeWithScale(p.nodes[0])
-  const first = p.nodes.find((x) => x.kind !== 'atom')
-  return first ? `${shortType(first)}等相乘` : `${p.nodes.length} 个元素相乘`
+  const factors = p.nodes.filter((x) => x.kind !== 'atom' || isAlnum(x))
+  const structs = factors.filter((x) => x.kind !== 'atom')
+  if (!structs.length) return readTerm(p)
+  const typeWords = new Set(structs.map((x) => shortType(x).replace(/^一个/, '')))
+  if (typeWords.size === 1 && structs.length === factors.length) {
+    return `${cn(factors.length, true)}个${[...typeWords][0]}相乘`
+  }
+  if (factors.length === 2) return `${shortType(factors[0])} 乘以 ${shortType(factors[1])}`
+  return `${cn(factors.length, true)}个因子相乘`
+}
+
+/** 朗读文本内 0–99 的整数转中文数字（G10）；量词前 2 读「两」，其余读「二」；小数与超过 99 的数不动 */
+function zhNumbers(s: string): string {
+  return s.replace(/\d+(?:\.\d+)?/g, (m, off: number, full: string) => {
+    if (m.includes('.') || m.length > 2) return m
+    const n = Number(m)
+    const next = full[off + m.length] ?? ''
+    return cn(n, next !== '' && '项行列个种段'.includes(next))
+  })
 }
 
 export function narrate(node: Node, level: Level): string {
-  if (level === 0) return l0(node)
-  if (level === 1) return l1(node)
-  return readFull(node)
+  const raw = level === 0 ? l0(node) : level === 1 ? l1(node) : readFull(node)
+  return zhNumbers(raw)
 }
 
 export function narrateLayers(node: Node): Layers {
   return { skeleton: narrate(node, 0), local: narrate(node, 1), detail: narrate(node, 2) }
+}
+
+function tokenizeRead(s: string): Set<string> {
+  const toks = new Set<string>()
+  for (const m of s.matchAll(/[a-zA-Z]+|[0-9]+|[一-鿿]/g)) toks.add(m[0])
+  return toks
+}
+
+function leafTokens(n: Node, depth: number, out: Set<string>) {
+  if (n.kind === 'atom') {
+    if (depth >= 2) for (const t of tokenizeRead(n.value)) out.add(t)
+    return
+  }
+  for (const k of childrenOf(n)) leafTokens(k, depth + 1, out)
+}
+
+/** 直接子层（深度 1）L1 允许读到的内容 token：原子读自身、单项读内容、单一结构给具体读法 */
+function directContentTokens(n: Node): Set<string> {
+  const out = new Set<string>()
+  const add = (s: string) => {
+    for (const t of tokenizeRead(s)) out.add(t)
+  }
+  if (n.kind === 'atom') {
+    add(n.value)
+    return out
+  }
+  if (n.kind === 'row') {
+    const ps = parts(n)
+    if (ps.length === 1 && ps[0].type === 'term') {
+      const t = ps[0]
+      if (isMonomial(t)) add(readTerm(t))
+      else if (t.nodes.length === 1) add(typeWithScale(t.nodes[0]))
+      else if (t.nodes.every((x) => x.kind === 'atom')) add(readTerm(t))
+    }
+    return out
+  }
+  if (n.kind === 'scripts') {
+    const c = scriptsConcrete(n)
+    if (c) add(c)
+  }
+  if (n.kind === 'sqrt' && n.index) add(readRow(n.index))
+  return out
+}
+
+/** G4 自检：L1 不得读孙节点内容。按支检查——每个直接子结构的 L1 描述 ∩ 该支孙节点及以下叶子 token = ∅。
+ *  全局交集会把跨支共享字母（2a 与 4ac 的 a）误判为泄漏，故按支断言。 */
+export function l1GrandchildLeaks(n: Node): string[] {
+  if (n.kind === 'group') return l1GrandchildLeaks(n.child)
+  if (n.kind === 'row' && n.children.length === 1) return l1GrandchildLeaks(n.children[0])
+  const pieces: { desc: string; sub: Node }[] = []
+  if (n.kind === 'row') {
+    const eq = splitEq(n)
+    if (eq) {
+      pieces.push({ desc: descriptor(eq.left), sub: eq.left }, { desc: descriptor(eq.right), sub: eq.right })
+    } else {
+      for (const p of parts(n)) {
+        if (p.type === 'conn') continue
+        if (isMonomial(p)) pieces.push({ desc: readTerm(p), sub: { kind: 'row', id: '', children: p.nodes } })
+        else if (p.nodes.length === 1) pieces.push({ desc: typeWithScale(p.nodes[0]), sub: p.nodes[0] })
+        else if (p.nodes.every((x) => x.kind === 'atom'))
+          pieces.push({ desc: readTerm(p), sub: { kind: 'row', id: '', children: p.nodes } })
+        else pieces.push({ desc: termDesc(p), sub: { kind: 'row', id: '', children: p.nodes } })
+      }
+    }
+  } else if (n.kind === 'cases') {
+    for (const r of n.rows) {
+      if (r.cond) pieces.push({ desc: readRow(r.cond), sub: r.cond })
+      pieces.push({ desc: descriptor(stripTrailingPunct(r.value)), sub: r.value })
+    }
+  } else if (n.kind === 'bigop') {
+    if (n.lower) pieces.push({ desc: readRow(n.lower), sub: n.lower })
+    if (n.upper) pieces.push({ desc: readRow(n.upper), sub: n.upper })
+    pieces.push({ desc: descriptor(n.body), sub: n.body })
+  } else {
+    for (const c of childrenOf(n)) pieces.push({ desc: descriptor(c), sub: c })
+  }
+  const leaks: string[] = []
+  for (const { desc, sub } of pieces) {
+    const forbidden = new Set<string>()
+    leafTokens(sub, 0, forbidden)
+    // 直接子层允许读的内容（如幂的底数）不算泄漏；跨支共享字母只按支判定
+    for (const k of childrenOf(sub)) for (const t of directContentTokens(k)) forbidden.delete(t)
+    for (const t of tokenizeRead(desc)) if (forbidden.has(t)) leaks.push(t)
+  }
+  return leaks
 }

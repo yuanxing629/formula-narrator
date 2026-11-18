@@ -1,10 +1,14 @@
-import { useState } from 'react'
-import type { Layers } from '../lib/narrate'
+import { useMemo, useRef, useState } from 'react'
+import { narrateLayers } from '../lib/narrate'
+import type { Node } from '../lib/parser'
 import { speak, speechAvailable } from '../lib/speak'
 
 interface Props {
-  title: string
-  layers?: Layers
+  /** 面包屑路径文本，如「等式 › 右边 › 分式 › 分子」 */
+  path: string
+  node?: Node
+  rootDetail?: string
+  isRoot: boolean
   error?: string
 }
 
@@ -14,10 +18,12 @@ const layers = [
   { key: 'detail', label: '细节', hint: '最后逐字听完整表达式' },
 ] as const
 
-export default function NarrationPanel({ title, layers: text, error }: Props) {
+export default function NarrationPanel({ path, node, rootDetail, isRoot, error }: Props) {
   const [notice, setNotice] = useState('')
+  const copyRef = useRef<HTMLTextAreaElement>(null)
+  const text = useMemo(() => (node ? narrateLayers(node) : undefined), [node])
 
-  if (error || !text) {
+  if (error || !text || !node) {
     return (
       <section className="panel" aria-label="朗读区">
         <h2>朗读区</h2>
@@ -34,14 +40,48 @@ export default function NarrationPanel({ title, layers: text, error }: Props) {
     setNotice(ok ? '' : '语音不可用，请直接阅读下方文本。')
   }
 
+  const script = `骨架：${text.skeleton}\n局部：${text.local}\n细节：${text.detail}`
+
+  const copyScript = async () => {
+    try {
+      await navigator.clipboard.writeText(script)
+      setNotice('朗读稿已复制。')
+    } catch {
+      const ta = copyRef.current
+      if (ta) {
+        ta.focus()
+        ta.select()
+        try {
+          document.execCommand('copy')
+          setNotice('朗读稿已复制。')
+        } catch {
+          setNotice('复制失败，请手动全选文本复制。')
+        }
+      }
+    }
+  }
+
   return (
     <section className="panel" aria-label="朗读区">
-      <h2>朗读区 · {title}</h2>
+      <h2>朗读区 · {path}</h2>
       {!speechAvailable() && (
         <p className="muted" role="status">
           此浏览器不支持语音，三层文本仍可正常阅读。
         </p>
       )}
+      <div className="node-actions" role="group" aria-label="朗读动作">
+        <button type="button" className="primary" onClick={() => handleSpeak(text.detail)}>
+          读这个节点
+        </button>
+        <button
+          type="button"
+          onClick={() => rootDetail && handleSpeak(rootDetail)}
+          disabled={isRoot || !rootDetail}
+          title={isRoot ? '当前已在整式根节点' : '从头朗读整个公式'}
+        >
+          读整体
+        </button>
+      </div>
       {layers.map(({ key, label, hint }) => (
         <div className="layer" key={key}>
           <div className="layer-head">
@@ -54,6 +94,16 @@ export default function NarrationPanel({ title, layers: text, error }: Props) {
           <p className="layer-text">{text[key]}</p>
         </div>
       ))}
+      <div className="layer">
+        <div className="layer-head">
+          <h3>朗读稿</h3>
+          <span className="muted">纯文本，可复制带走</span>
+          <button type="button" onClick={copyScript}>
+            复制朗读稿
+          </button>
+        </div>
+        <textarea ref={copyRef} className="script-area" readOnly rows={4} value={script} aria-label="朗读稿纯文本" />
+      </div>
       {notice && (
         <p className="muted" role="status">
           {notice}
