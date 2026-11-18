@@ -208,6 +208,76 @@ textarea {
   font-weight: 600;
 }
 
+.struct-list {
+  margin-top: 0.75rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.5rem;
+}
+
+.struct-list summary {
+  cursor: pointer;
+  font-weight: 600;
+  min-height: 2.5rem;
+  display: flex;
+  align-items: center;
+}
+
+.struct-list ul {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0;
+}
+
+.struct-list li {
+  margin: 0.1rem 0;
+}
+
+.struct-list button {
+  width: 100%;
+  text-align: left;
+  white-space: normal;
+  word-break: break-word;
+  min-height: 2.5rem;
+  padding: 0.3rem 0.6rem;
+}
+
+.struct-list button[aria-current='true'] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.pin-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.pin-row button {
+  min-height: 2.5rem;
+}
+
+.pin-row button[aria-pressed='true'] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.diff-card {
+  margin: 0.75rem 0 0;
+  padding: 0.6rem 0.9rem;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: 0.5rem;
+}
+
+.diff-card:empty {
+  display: none;
+}
+
 .node-actions {
   display: flex;
   flex-wrap: wrap;

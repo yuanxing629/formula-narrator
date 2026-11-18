@@ -7,8 +7,19 @@ import type { BigopNode, Node, RowNode, ScriptsNode } from './parser'
 
 export type Level = 0 | 1 | 2
 
-/** 内部术语不得进入朗读文本（G6）；自检对全部输出断言 */
-export const READ_FORBIDDEN = ['项式', '单项', '规模', '地标', '结构', '节点']
+/** 内部术语不得进入朗读文本（G6）；自检对全部输出断言。
+ *  M4.1 裁定：由子串匹配改为精确正则，放行正常数学词（多项式/单项式/二项式/三项式/形式/结构）。
+ *  首条规则较裁定原文收窄——去掉「二、三」以放行二项式/三项式（与放行清单一致），仍拦「一项式/数字项式」。 */
+export const READ_FORBIDDEN: RegExp[] = [
+  /(\d|[一四五六七八九十两])\s*项式/,
+  /单项(?!式)/,
+  /规模|地标|节点/,
+  /这是一个[^。]{0,8}结构/,
+]
+
+export function hasForbidden(s: string): boolean {
+  return READ_FORBIDDEN.some((r) => r.test(s))
+}
 
 const CN_DIGITS = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九']
 
@@ -129,7 +140,7 @@ const ATOM_READ: Record<string, string> = {
 
 const FUNC_NAMES = new Set(['f', 'g', 'h', 'sin', 'cos', 'tan', 'log', 'ln', 'exp'])
 
-function readAtom(v: string): string {
+export function readAtom(v: string): string {
   if (ATOM_READ[v]) return ATOM_READ[v]
   // 白名单外命令：降级念符号名
   return v.startsWith('\\') ? v.slice(1) : v
@@ -147,13 +158,13 @@ function isFunc(n: Node): boolean {
   return false
 }
 
-type Part =
+export type Part =
   | { type: 'term'; sign: string; binary?: string; nodes: Node[] }
   | { type: 'conn'; op: string }
 
 /** 按加减号切项；\pm/\mp 是连接符，不计入项数（D4）；行首/连接符后为一元符号；
  *  括号内的加减号不切项（A4）：(a+b)c 是一个乘积，只算一项 */
-function parts(row: RowNode): Part[] {
+export function parts(row: RowNode): Part[] {
   const out: Part[] = []
   let cur: { type: 'term'; sign: string; binary?: string; nodes: Node[] } = {
     type: 'term',
@@ -699,12 +710,14 @@ function termDesc(p: Part & { type: 'term' }): string {
 }
 
 /** 朗读文本内 0–99 的整数转中文数字（G10）；量词前 2 读「两」，其余读「二」；小数与超过 99 的数不动 */
-function zhNumbers(s: string): string {
+export function zhNumbers(s: string): string {
   return s.replace(/\d+(?:\.\d+)?/g, (m, off: number, full: string) => {
     if (m.includes('.') || m.length > 2) return m
     const n = Number(m)
     const next = full[off + m.length] ?? ''
-    return cn(n, next !== '' && '项行列个种段'.includes(next))
+    const prev = full[off - 1] ?? ''
+    // 序数（第N行/列/项）读「二」不读「两」；量词（N个/N项）才读「两」
+    return cn(n, prev !== '第' && next !== '' && '项行列个种段'.includes(next))
   })
 }
 

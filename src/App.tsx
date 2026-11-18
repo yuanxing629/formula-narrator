@@ -2,9 +2,11 @@ import { useMemo, useState } from 'react'
 import FormulaView from './components/FormulaView'
 import NarrationPanel from './components/NarrationPanel'
 import Breadcrumb from './components/Breadcrumb'
+import StructureList from './components/StructureList'
 import { defaultPreset, findPreset, presets } from './data/presets'
 import { narrate } from './lib/narrate'
 import { parse } from './lib/parser'
+import { diffFormulae } from './lib/diff'
 import { breadcrumbOf, buildIndex, parseSideId, resolveSelected, sideLabel, type AddrEntry } from './lib/address'
 
 function initialLatex(): string {
@@ -23,6 +25,8 @@ export default function App() {
   // 选中状态不持久化：刷新后回到根节点（展开记忆是 M3）
   const [selectedId, setSelectedId] = useState('0')
   const [liveMsg, setLiveMsg] = useState('')
+  // 钉住对比：基准公式快照（null = 未钉住）；差异卡随输入框改动自动更新
+  const [pinned, setPinned] = useState<string | null>(null)
   const preset = findPreset(latex)
   const parsed = useMemo(() => parse(latex), [latex])
   const index = useMemo(
@@ -35,6 +39,14 @@ export default function App() {
   const crumbs = parsed.ok ? breadcrumbOf(index, selectedId) : []
   const path = crumbs.map((c) => c.label).join(' › ')
   const rootDetail = parsed.ok ? narrate(parsed.node, 2) : undefined
+
+  const diffText = useMemo(() => {
+    if (pinned === null) return ''
+    const base = parse(pinned)
+    if (!base.ok) return ''
+    if (!parsed.ok) return '当前公式无法解析，差异暂不可用。'
+    return diffFormulae(base.node, parsed.node)
+  }, [pinned, parsed])
 
   const update = (tex: string) => {
     setLatex(tex)
@@ -97,7 +109,29 @@ export default function App() {
           onSelect={select}
         />
         <Breadcrumb crumbs={crumbs} onSelect={select} />
+        <StructureList index={index} selectedId={selectedId} onSelect={select} />
         <p className="muted">点公式里的任意结构，或用 Tab + 回车选中；面包屑可点回上层。</p>
+      </section>
+
+      <section className="panel" aria-label="钉住对比">
+        <div className="pin-row">
+          <button
+            type="button"
+            aria-pressed={pinned !== null}
+            disabled={pinned === null && !parsed.ok}
+            onClick={() => setPinned(pinned === null ? latex : null)}
+          >
+            {pinned === null ? '钉住对比' : '对比中 · 清除'}
+          </button>
+          <span className="muted">
+            {pinned === null
+              ? '把当前公式记为基准，再改输入框，自动说出差异。'
+              : '已钉住基准；继续改输入框或换示例，差异会自动更新。'}
+          </span>
+        </div>
+        <p className="diff-card" aria-live="polite">
+          {diffText}
+        </p>
       </section>
 
       <NarrationPanel

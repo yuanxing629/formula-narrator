@@ -33,21 +33,19 @@ export default function FormulaView({ tree, selectedId, index, onSelect }: Props
     }
   }, [tree])
 
-  // 可点结构 tabindex=0 + role/aria-label；交互走 HTML 侧，MathML 侧对读屏隐藏避免重复播报
+  // 读屏走 MathML（KaTeX 默认可读）与下方「按结构点名」列表；视觉 HTML 层对读屏隐藏，
+  // 且 aria-hidden 容器内不留可聚焦元素（去掉 tabindex/role），鼠标点击仍保留供视觉用户。
   useEffect(() => {
     const el = ref.current
     if (!el || !html) return
-    el.querySelector('.katex-html')?.removeAttribute('aria-hidden')
-    el.querySelector('.katex-mathml')?.setAttribute('aria-hidden', 'true')
+    el.querySelector('.katex-html')?.setAttribute('aria-hidden', 'true')
+    el.querySelector('.katex-mathml')?.removeAttribute('aria-hidden')
     el.querySelectorAll<HTMLElement>('.katex-html [data-node]').forEach((span) => {
-      const id = span.dataset.node ?? ''
-      const entry = index.get(id)
-      if (!entry) return
-      span.tabIndex = 0
-      span.setAttribute('role', 'button')
-      span.setAttribute('aria-label', entry.label)
+      span.removeAttribute('tabindex')
+      span.removeAttribute('role')
+      span.removeAttribute('aria-label')
     })
-  }, [html, index])
+  }, [html])
 
   // 命中宽度不足 24px 的叶子小目标加 fn-tiny，由 ::after 外扩热区；不改 padding，保证插桩渲染与原始渲染排版一致。
   // 祖先若也加 ::after，会作为末尾子盒盖住后代小目标的命中，故只标无 [data-node] 后代的叶子节点（A3）。
@@ -103,18 +101,9 @@ export default function FormulaView({ tree, selectedId, index, onSelect }: Props
     <div
       ref={ref}
       className="formula-view"
-      aria-label="公式渲染区，点选任意结构可定位朗读"
       onClick={(e) => {
         const id = idFromEvent(e)
         if (id) onSelect(id)
-      }}
-      onKeyDown={(e) => {
-        if (e.key !== 'Enter' && e.key !== ' ') return
-        const id = idFromEvent(e)
-        if (id) {
-          e.preventDefault()
-          onSelect(id)
-        }
       }}
       dangerouslySetInnerHTML={{ __html: html }}
     />

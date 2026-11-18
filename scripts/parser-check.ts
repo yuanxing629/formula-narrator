@@ -1,9 +1,10 @@
 // M2 修订自检：npm run check:parser（esbuild 打包后 node 运行，不引入测试框架）
 import katex from 'katex'
 import { findNode, parse, type Node, type RowNode } from '../src/lib/parser'
-import { l1GrandchildLeaks, narrate, narrateLayers, READ_FORBIDDEN } from '../src/lib/narrate'
+import { hasForbidden, l1GrandchildLeaks, narrate, narrateLayers, zhNumbers } from '../src/lib/narrate'
 import { toWrappedLatex } from '../src/lib/renderTex'
 import { breadcrumbOf, buildIndex, resolveSelected } from '../src/lib/address'
+import { diffFormulae } from '../src/lib/diff'
 import { presets } from '../src/data/presets'
 
 let failed = 0
@@ -125,7 +126,7 @@ for (const p of presets) {
   check(`L1≠L2 ${p.id}`, p.local !== p.detail)
   check(`TTS 无孤立乘 ${p.id}`, !loneCheng.test(p.skeleton + p.local + p.detail))
   const all = p.skeleton + p.local + p.detail
-  check(`A1 朗读词表分离 ${p.id}`, READ_FORBIDDEN.every((w) => !all.includes(w)), all)
+  check(`A1 朗读词表分离 ${p.id}`, !hasForbidden(all), all)
   check(`A7 无阿拉伯数字 ${p.id}`, !/[0-9]/.test(all), all)
 }
 
@@ -250,7 +251,7 @@ check('勾股定理 L2 为纯读法', pyth.detail === 'a 的平方 加 b 的平�
 check('勾股定理 L1≠L2', pyth.local !== pyth.detail)
 const matMulL0 = narrate(mustParse('\\begin{pmatrix}1 & 2\\\\ 3 & 4\\end{pmatrix}\\begin{pmatrix}0 & 1\\\\ 1 & 0\\end{pmatrix}=\\begin{pmatrix}2 & 1\\\\ 4 & 3\\end{pmatrix}'), 0)
 check('矩阵等式 L0 不重复报数', !matMulL0.includes('含三个矩阵'), matMulL0)
-check('A1 矩阵等式 L0 无内部术语', READ_FORBIDDEN.every((w) => !matMulL0.includes(w)), matMulL0)
+check('A1 矩阵等式 L0 无内部术语', !hasForbidden(matMulL0), matMulL0)
 check('cases 值行不读分隔逗号', !narrate(mustParse(CASES), 2).includes('逗号'), narrate(mustParse(CASES), 2))
 
 // B1 渲染映射：htmlData 包裹后 KaTeX DOM 保留全部非原子节点 id，值无引号转义
@@ -328,6 +329,99 @@ const plainHtml = katex.renderToString(QUAD, KATEX_OPTS)
 const stylesOf = (h: string) => new Set(h.match(/style="[^"]*"/g) ?? [])
 const plainStyles = stylesOf(plainHtml)
 check('M2.1 A3 插桩不新增样式', [...stylesOf(quadHtml)].every((s) => plainStyles.has(s)))
+
+// M4 钉住对比：七条验收 + 增删项/系数/上限/截断回归
+const diffOf = (a: string, b: string) => diffFormulae(mustParse(a) as RowNode, mustParse(b) as RowNode)
+const QUAD_PLUS = QUAD.replace('\\pm', '+')
+check('M4-1 加减号变加号', diffOf(QUAD, QUAD_PLUS) === '分子中间的加减号变成了加号。', diffOf(QUAD, QUAD_PLUS))
+check('M4-2 指数平方变立方', diffOf('x^{2}', 'x^{3}') === '指数从平方变成了立方。', diffOf('x^{2}', 'x^{3}'))
+check('M4-3 分母指数变化', diffOf('\\frac{1}{n^{2}}', '\\frac{1}{n^{3}}') === '分母的指数从平方变成了立方。', diffOf('\\frac{1}{n^{2}}', '\\frac{1}{n^{3}}'))
+check('M4-4 常数项变化', diffOf('2x+1', '2x+3') === '常数项从一变成了三。', diffOf('2x+1', '2x+3'))
+const structDiff = diffOf('\\frac{1}{2}', 'x+1')
+check('M4-5 结构不同只提示', structDiff === '两式形式不同：一个是分式，一个是多项式。', structDiff)
+check('M4-6 完全相同', diffOf(QUAD, QUAD) === '两式完全相同。', diffOf(QUAD, QUAD))
+check('M4-6 空白差异视为相同', diffOf(QUAD, QUAD.replace(/}/g, '} ')) === '两式完全相同。')
+check('M4 系数变化', diffOf('2x+1', '3x+1') === '系数从二变成了三。', diffOf('2x+1', '3x+1'))
+check('M4 分母字母替换', diffOf('\\frac{1}{a}', '\\frac{1}{b}') === '分母里的a变成了b。', diffOf('\\frac{1}{a}', '\\frac{1}{b}'))
+check('M4 增项', diffOf('a+b', 'a+b+2c') === '右边多了一项 二c。', diffOf('a+b', 'a+b+2c'))
+check('M4 减项', diffOf('a+b-3', 'a+b') === '右边少了一项 负 三。', diffOf('a+b-3', 'a+b'))
+check('M4 中间增项不错位', diffOf('a+c', 'a+b+c') === '多了一项 b。', diffOf('a+c', 'a+b+c'))
+check('M4 求和变积分', diffOf('\\sum_{i=1}^{n}i', '\\int_{i=1}^{n}i') === '从求和变成了积分。', diffOf('\\sum_{i=1}^{n}i', '\\int_{i=1}^{n}i'))
+check('M4 上限增删', diffOf('\\sum_{i=1}^{n}i', '\\sum_{i=1}i') === '少了上限 n。', diffOf('\\sum_{i=1}^{n}i', '\\sum_{i=1}i'))
+const matSize = diffOf(MATRIX, 'A=\\begin{pmatrix}1 & 2 & 0\\\\ 3 & 4 & 0\\\\ 0 & 0 & 1\\end{pmatrix}')
+check('M4 矩阵行列变化', matSize.includes('矩阵从两行两列变成了三行三列'), matSize)
+const manyDiff = diffOf('a+b+c+d', 'w+x+y+z')
+check('M4 超三处截断', manyDiff.startsWith('共四处不同，先说前三处：') && !manyDiff.includes('d变成了z'), manyDiff)
+check('M4 两处用两', diffOf('a+b', 'w+x').startsWith('有两处不同：'), diffOf('a+b', 'w+x'))
+check('M4 根号内深层定位', diffOf('\\sqrt{a+b}', '\\sqrt{a+c}').includes('根号内'), diffOf('\\sqrt{a+b}', '\\sqrt{a+c}'))
+// M4-7 合规：一批差异句全部通过 READ_FORBIDDEN 与无阿拉伯数字
+const diffPairs: [string, string][] = [
+  [QUAD, QUAD_PLUS],
+  ['x^{2}', 'x^{3}'],
+  ['\\frac{1}{n^{2}}', '\\frac{1}{n^{3}}'],
+  ['2x+1', '2x+3'],
+  ['\\frac{1}{2}', 'x+1'],
+  [QUAD, QUAD],
+  ['2x+1', '3x+1'],
+  ['\\frac{1}{a}', '\\frac{1}{b}'],
+  ['a+b', 'a+b+2c'],
+  ['a+b-3', 'a+b'],
+  ['\\sum_{i=1}^{n}i', '\\int_{i=1}^{n}i'],
+  [MATRIX, 'A=\\begin{pmatrix}1 & 2 & 0\\\\ 3 & 4 & 0\\\\ 0 & 0 & 1\\end{pmatrix}'],
+  ['a+b+c+d', 'w+x+y+z'],
+  ['\\sqrt{a+b}', '\\sqrt{a+c}'],
+  ['\\frac{\\sqrt{2}}{3}', '\\frac{2}{3}'],
+  [CASES, 'f(x)=\\begin{cases}x^{2}, & x\\geq 0\\\\ -x, & x<0\\\\ 0, & x=0\\end{cases}'],
+  ['x^{2}', 'x'],
+  ['\\sqrt[3]{a}', '\\sqrt{a}'],
+]
+for (const [a, b] of diffPairs) {
+  const s = diffOf(a, b)
+  check(`M4-7 无内部术语 ${a.slice(0, 10)}`, !hasForbidden(s), s)
+  check(`M4-7 无阿拉伯数字 ${a.slice(0, 10)}`, !/[0-9]/.test(s), s)
+}
+
+// M4.1 S1：禁词精确规则——放行正常数学词，拦内部标签与元语言定义
+for (const ok of ['多项式', '单项式', '二项式', '三项式', '形式', '结构不同', '两式形式不同：一个是分式，一个是多项式。'])
+  check(`S1 放行 ${ok}`, !hasForbidden(ok), ok)
+for (const bad of ['1项式', '一项式', '两项式', '单项', '规模', '地标', '节点', '这是一个分式结构'])
+  check(`S1 拦截 ${bad}`, hasForbidden(bad), bad)
+check('S1 单项式不误伤', !hasForbidden('单项式') && hasForbidden('单项标签'))
+
+// M4.1 S2：增删项方位（等号未动）；项内变化不带方位
+check('S2 右侧增项', diffOf('x+1', 'x+1+y') === '右边多了一项 y。', diffOf('x+1', 'x+1+y'))
+check('S2 左侧增项', diffOf('x+1', 'y+x+1') === '左边多了一项 y。', diffOf('x+1', 'y+x+1'))
+check('S2 项内变化无方位', diffOf('2x+1', '2x+3') === '常数项从一变成了三。', diffOf('2x+1', '2x+3'))
+check('S2 中间增项无方位', diffOf('a+c', 'a+b+c') === '多了一项 b。', diffOf('a+c', 'a+b+c'))
+check('S2 左侧减项', diffOf('y+a+b', 'a+b') === '左边少了一项 y。', diffOf('y+a+b', 'a+b'))
+
+// M4.1 S3：顺序差异单独成句，不当无差异，也不误报多处
+check('S3 加法顺序', diffOf('a+b', 'b+a') === '两式内容相同，只是加法顺序不同。', diffOf('a+b', 'b+a'))
+check('S3 三项顺序', diffOf('a+b+c', 'c+b+a') === '两式内容相同，只是加法顺序不同。', diffOf('a+b+c', 'c+b+a'))
+const orderVsChange = diffOf('a+b', 'a+c')
+check('S3 内容变化仍正常报', orderVsChange.includes('b变成了c') && !orderVsChange.includes('顺序'), orderVsChange)
+check('S3 顺序句合规', !hasForbidden(diffOf('a+b', 'b+a')) && !/[0-9]/.test(diffOf('a+b', 'b+a')))
+
+// M4.1 S4：结构列表寻址（索引无原子、aria-label 合规）+ MathML 存在
+const rootTree = mustParse(ROOT) as RowNode
+const rootIndex = buildIndex(rootTree)
+check('S4 三次根式列表项目数', rootIndex.size === 8, String(rootIndex.size))
+let s4Labels = 0
+for (const tex of [QUAD, ROOT, SUM, CASES, MATRIX]) {
+  const idx = buildIndex(mustParse(tex) as RowNode)
+  check(`S4 索引无原子 ${tex.slice(0, 8)}`, [...idx.values()].every((e) => e.node.kind !== 'atom'))
+  for (const [id, e] of idx) {
+    const label = zhNumbers(breadcrumbOf(idx, id).map((c) => c.label).join(' › ') + '，' + narrate(e.node, 1))
+    if (hasForbidden(label) || /[0-9]/.test(label)) check(`S4 标签合规 ${id}@${tex.slice(0, 8)}`, false, label)
+    s4Labels++
+  }
+}
+check('S4 标签合规覆盖', s4Labels > 30, String(s4Labels))
+const s4Html = katex.renderToString(toWrappedLatex(rootTree), KATEX_OPTS)
+check('S4 MathML 存在', s4Html.includes('katex-mathml'))
+check('S4 HTML 层存在', s4Html.includes('katex-html'))
+check('S4 序数读二不读两', zhNumbers('第2行第2列') === '第二行第二列', zhNumbers('第2行第2列'))
+check('S4 量词仍读两', zhNumbers('2个矩阵') === '两个矩阵', zhNumbers('2个矩阵'))
 
 if (failed) {
   throw new Error(`共 ${failed} 项失败`)
