@@ -1,6 +1,6 @@
 # 括号降噪 + 粘贴韧性报告（P1 / P2）
 
-生成日期：2026-11-18。验证命令：`npm run check:parser`（712 条断言）、`npm run check:corpus`（30 条语料）、`npx tsc -b`；浏览器实测见第五节。
+生成日期：2026-11-18（S3 修补同日追加）。验证命令：`npm run check:parser`（780 条断言）、`npm run check:corpus`（30 条语料）、`npx tsc -b`；浏览器实测见第五节。
 本报告对应任务「括号降噪 + 粘贴韧性」，边界：只改朗读拼接（P1）与解析/降级（P2），不改差异算法、不改 6 个示例的语义、不改部署。
 
 ## 一、P1 括号降噪三档规则
@@ -45,8 +45,20 @@
 - 符号白名单 **206 条**（原 87 条）。新增分组：希腊字母变体与补全 25（varepsilon varphi chi psi rho tau nu xi zeta eta kappa epsilon upsilon phi iota vartheta varrho varsigma varpi 及大写 Theta Pi Phi Psi Xi Upsilon）；关系 8（ll gg leqslant geqslant lesssim gtrsim asymp doteq）；集合与定界符 13（subsetneq supsetneq setminus mid nmid langle rangle lfloor rfloor lceil rceil dagger complement）；箭头 15（长箭头族、上下箭头、四向箭头、hookrightarrow、rightharpoonup）；大运算符符号 13（bigcup bigcap iint iiint oint oiint bigoplus bigotimes bigodot bigvee bigwedge bigsqcup coprod，按符号读、不做上下限结构解析）；函数名 23（det dim gcd max min sup inf arcsin arccos arctan sinh cosh tanh cot sec csc coth arg deg hom ker limsup liminf Pr）；其它 19（hbar ell Re Im aleph beth wp top bot vdash models simeq bowtie lvert rvert lVert rVert backslash colon）；间距 2（quad qquad，朗读静默）。全部新增符号配中文读音（src/lib/narrate.ts ATOM_READ）。
 - 透明命令（tokenizer 跳过，不计未知）：left right limits nolimits displaystyle textstyle scriptstyle scriptscriptstyle。
 - 转义字面符按普通字符解析并读音：`\%`→百分号、`\{`→左花括号、`\}`→右花括号、`\$`→美元符号、`\#`→井号、`\&`→和号、`\_`→下划线。
-- 带参未支持命令吞参表 **26 条**：binom(2)、operatorname、mathrm、mathbf、mathbb、mathcal、text、textbf、hat、bar、vec、dot、ddot、tilde、widehat、widetilde、overline、underline、boxed、phantom、hbox、substack、color(以上 1)、overset、underset、stackrel(以上 2)。吞参容忍参数内的 `&` 与 `\\`（多行 \substack 不再整段解析失败）；整体读「未支持的符号」并计入角落计数；value 保留原源码供 KaTeX 渲染。
-- 验收：`y=\text{当 x 大于零}` 细节层 = 「y 等于 未支持的符号」，不出现「t e x t」逐字拼读；角落提示「有 1 个符号未能朗读」；公式正常渲染。
+- 带参未支持命令吞参表 **19 条**：binom(2)、hat、bar、vec、dot、ddot、tilde、widehat、widetilde、overline、underline、boxed、phantom、hbox、substack、color(以上 1)、overset、underset、stackrel(以上 2)。吞参容忍参数内的 `&` 与 `\\`（多行 \substack 不再整段解析失败）；整体读「未支持的符号」并计入角落计数；value 保留原源码供 KaTeX 渲染。原表中的 text、mathrm、mathbf、textbf、mathbb、mathcal、operatorname 七条自 S3 起改为读参数原文（见下）。
+- 验收：`y=\text{当 x 大于零}` 不出现「t e x t」逐字拼读；P2 阶段读「未支持的符号」，S3 后读中文原文「y 等于 当 x 大于零」。
+
+### S3 追加修补：字面文本 + 函数应用扩充（同日）
+
+起因：外部粘贴的论文公式（如 `e_{ij} = \sigma(\text{MLP}_{\theta}([z_i; z_j; p_k]))`）中字体命令被读成「未支持的符号」、函数应用括号刷屏。三条语义安全的规则：
+
+1. **字体命令与 operatorname 读参数原文**：text、mathrm、mathbf、textbf、mathbb、mathcal、operatorname 的内容即字面文本/函数名，照原文朗读（`\text{MLP}`→「MLP」、`\mathbb{R}`→「R」、`\operatorname{sgn}`→「sgn」），不计未知；参数内嵌数学命令（含反斜杠，如 `\text{\alpha}`）降级回「未支持的符号」并计数。渲染仍用原源码，字体效果不变。
+2. **函数应用识别扩充**：小写希腊字母原子（σ、φ、ψ…）与纯字母字面量（MLP、sgn…）后接括号按函数应用静默，嵌套应用（σ(MLP(…))）各层括号均静默；函数参数内的**分组**括号仍走 P1 三档（如 `f((a+b)c)` 读「f a 与 b 的和 乘以 c」）。拉丁字母×括号仍按乘积（`a(b+c)` 读「a 乘以 b 与 c 的和」），不变。
+3. **分号读音**：`;` 读「分号」（原为裸字符）。
+
+验收句（用户例句细节层原文）：「e 下标 ij 等于 西格玛 MLP 下标 西塔 左方括号 z 下标 i 分号 z 下标 j 分号 p 下标 k 右方括号」——无「未支持的符号」、无「左括号」、未知计数 0。
+惯例代价（如实声明）：`\pi(r+1)` 这类希腊字母×括号的乘积记法会被按应用读作「圆周率 r 加 一」；断言中固化了该约定以便审查。
+变更范围：与 P1/P2 提交基线逐字节对比，30 条语料三层输出零变化。
 
 ## 四、随机 10 条真实公式粘贴测试
 
@@ -61,25 +73,28 @@
 | R05 | 柯西-施瓦茨 | `\left(\sum_{i=1}^{n} a_i b_i\right)^{2} \leq \left(\sum_{i=1}^{n} a_i^{2}\right)\left(\sum_{i=1}^{n} b_i^{2}\right)` | 0 |
 | R06 | 取整不等式 | `\lfloor x \rfloor \leq x < \lceil x \rceil` | 0 |
 | R07 | 行列式乘法 | `\det(AB)=\det(A)\det(B)` | 0 |
-| R08 | 公约数公倍数 | `\gcd(a,b)\cdot \mathrm{lcm}(a,b)=ab` | 1（mathrm） |
+| R08 | 公约数公倍数 | `\gcd(a,b)\cdot \mathrm{lcm}(a,b)=ab` | 0（S3 后 mathrm 读原文） |
 | R09 | 正态密度 | `f(x)=\frac{1}{\sigma\sqrt{2\pi}} e^{-\frac{(x-\mu)^{2}}{2\sigma^{2}}}` | 0 |
 | R10 | 二项式定理 | `(a+b)^{n}=\sum_{k=0}^{n} \binom{n}{k} a^{k} b^{n-k}` | 1（binom） |
 
-未朗读数序列：0,0,0,0,0,0,0,1,0,1 → **中位数 0**（验收要求 ≤2）。
+未朗读数序列（S3 后）：0,0,0,0,0,0,0,0,0,1 → **中位数 0**（验收要求 ≤2；P2 阶段序列为 0,0,0,0,0,0,0,1,0,1）。
 
 ## 五、验证汇总
 
 - `npx tsc -b`：0 错误。
-- `npm run check:parser`：**712 条断言全过**（原 608 条 + P2 新增 104 条；P1 阶段 5 条旧行为断言按新行为改写、未删除）。
+- `npm run check:parser`：**780 条断言全过**（608 既有 + P2 新增 104 + S3 新增/改写 68；P1 阶段 5 条、S3 阶段 6 条旧行为断言按新行为改写、未删除）。
 - `npm run check:corpus`：30/30 解析成功，L1 孙节点泄漏 0/606，平均未朗读 0.00；docs/corpus-report.md 已同步重生成（引言注明 P1 变更范围）。
-- 浏览器实测（Vite dev + 内置浏览器）：① aligned 降级渲染出公式本体、朗读区友好句+原因；② `\text{当 x 大于零}` 三层读「未支持的符号」、角落计数 1；③ 平方和示例细节层出现名词化读法、无角落提示；④ 粘贴 ε-δ 公式渲染与三层朗读正常、无角落提示。四页均无控制台报错、无空白公式。
+- 浏览器实测（Vite dev + 内置浏览器）：① aligned 降级渲染出公式本体、朗读区友好句+原因；② `\text{当 x 大于零}` 不逐字拼读命令名（P2 阶段读「未支持的符号」+角落计数 1，S3 后读中文原文、无角落提示）；③ 平方和示例细节层出现名词化读法、无角落提示；④ 粘贴 ε-δ 公式渲染与三层朗读正常、无角落提示；⑤ S3 后粘贴用户例句 `e_{ij} = \sigma(\text{MLP}_{\theta}([z_i; z_j; p_k]))`，细节层读「e 下标 ij 等于 西格玛 MLP 下标 西塔 左方括号 … 右方括号」、无角落提示（骨架/局部层对嵌套应用的误报见局限 10）。各页均无控制台报错、无空白公式。
 
 ## 六、已知局限
 
 1. 结构仍只覆盖 6 类；aligned、array 等环境可查看（降级渲染）但不能朗读、不能点选。
-2. 吞参表内命令整体读「未支持的符号」并计数（如 \mathrm{lcm}、\binom），不朗读其参数内容。
+2. 吞参表内命令整体读「未支持的符号」并计数（如 \binom、\hat），不朗读其参数内容；字体命令/operatorname 自 S3 起读原文，但参数内嵌数学命令时降级回「未支持的符号」。
 3. 既有解析局限（非本次引入）：求和/积分的被积式在括号内遇减号即终止，C21 与 R05 的括号嵌套求和朗读范围不准确；未朗读计数不受影响。
 4. `\mid` 统一读「给定」（概率语境优先）；集合构造式 `{x \mid x>0}` 中亦读「给定」而非「使得」。
 5. 大运算符符号（bigcup、iint 等）按符号名读，不做上下限结构解析。
 6. 多行 \substack 整体吞为「未支持的符号」，其内部条件不朗读。
 7. 名词化退化用例见第一节清单；退化即回退保留括号，不产生错读。
+8. 函数应用惯例代价（S3）：希腊字母×括号按应用静默，`\pi(r+1)` 这类乘积记法误读为「圆周率 r 加 一」；拉丁字母×括号仍按乘积，不受影响。
+9. 字面文本按源码原文朗读，不做数字转中文等数学读法处理（`\text{第 1 章}` 读「第 1 章」）；方括号仍读「左方括号/右方括号」（向量/区间定界符承重）。
+10. 描述层（骨架/局部）尚未识别函数应用与分号列表：含嵌套应用或 `[a;b;c]` 的行会被 termDesc 按因子数误报「N 个幂相乘」（如用户例句骨架读「右边四个幂相乘」）。此为既有缺陷（S3 之前对 f(x_i+y_j) 等同样误报），细节层不受影响、朗读正确。建议另立 S4 修补描述路径（函数应用单元 + 定界符感知），需改写相应 L0/L1 断言。

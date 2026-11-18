@@ -12,6 +12,8 @@ export interface AtomNode {
   value: string
   /** 白名单外带参命令：参数已整体吞掉，朗读为「未支持的符号」；value 保留原源码供渲染 */
   unsupported?: boolean
+  /** 字体命令/operatorname：参数原文照读（S3）；value 仍保留原源码供渲染 */
+  literal?: string
 }
 export interface GroupNode {
   kind: 'group'
@@ -130,11 +132,13 @@ export const SYMBOL_WHITELIST = [
 // 不吞参会把参数误读成独立因子（如 \binom{n}{k} 读成「n 乘以 k」），语义全错且无提示。
 const ARITY: Record<string, number> = {
   binom: 2,
-  operatorname: 1, mathrm: 1, mathbf: 1, mathbb: 1, mathcal: 1, text: 1, textbf: 1,
   hat: 1, bar: 1, vec: 1, dot: 1, ddot: 1, tilde: 1, widehat: 1, widetilde: 1,
   overline: 1, underline: 1, boxed: 1, phantom: 1, hbox: 1, substack: 1,
   color: 1, overset: 2, underset: 2, stackrel: 2,
 }
+
+// 字体命令与 operatorname：内容即字面文本/函数名，读参数原文（S3）
+const LITERAL_CMDS = ['text', 'mathrm', 'mathbf', 'textbf', 'mathbb', 'mathcal', 'operatorname']
 
 function tokenize(src: string): Tok[] {
   const toks: Tok[] = []
@@ -337,6 +341,21 @@ class Parser {
         return this.parseEnv(env)
       }
       default: {
+        if (LITERAL_CMDS.includes(tok.v)) {
+          const argStart = this.peek().pos
+          this.parseArg()
+          const argEnd = this.toks[this.pos - 1].end
+          let literal = this.src.slice(argStart, argEnd)
+          if (literal.startsWith('{')) literal = literal.slice(1, -1)
+          literal = literal.trim()
+          const value = this.src.slice(tok.pos, argEnd)
+          // 参数内嵌数学命令时原文照读会念出反斜杠，降级回吞参读「未支持的符号」
+          if (literal.includes('\\')) {
+            this.unknown.push(tok.v)
+            return { kind: 'atom', id: '', value, unsupported: true }
+          }
+          return { kind: 'atom', id: '', value, literal }
+        }
         if (!SYMBOL_WHITELIST.includes(tok.v)) this.unknown.push(tok.v)
         const arity = ARITY[tok.v]
         if (arity !== undefined) {

@@ -44,6 +44,7 @@ const ATOM_READ: Record<string, string> = {
   '<': '小于',
   '>': '大于',
   ',': '逗号',
+  ';': '分号',
   '(': '左括号',
   ')': '右括号',
   '[': '左方括号',
@@ -187,6 +188,13 @@ const FUNC_NAMES = new Set([
   'limsup', 'liminf', 'Pr',
 ])
 
+// 小写希腊字母作函数名是惯例（σ(x)、φ(x) 等激活/映射记法）；拉丁字母×括号仍按乘积（S3）
+const GREEK_LOWER = new Set([
+  'alpha', 'beta', 'gamma', 'delta', 'epsilon', 'varepsilon', 'zeta', 'eta', 'theta', 'vartheta',
+  'iota', 'kappa', 'lambda', 'mu', 'nu', 'xi', 'pi', 'varpi', 'rho', 'varrho',
+  'sigma', 'varsigma', 'tau', 'upsilon', 'phi', 'varphi', 'chi', 'psi', 'omega',
+])
+
 export function readAtom(v: string): string {
   // 用 !== undefined：quad/qquad 的读音是空串（静默），不能被当成缺省
   if (ATOM_READ[v] !== undefined) return ATOM_READ[v]
@@ -194,9 +202,11 @@ export function readAtom(v: string): string {
   return v.startsWith('\\') ? v.slice(1) : v
 }
 
-/** 带参未支持命令整体读「未支持的符号」，不逐字拼源码 */
+/** 带参未支持命令整体读「未支持的符号」，不逐字拼源码；字体命令读参数原文（S3） */
 function readAtomNode(n: Node & { kind: 'atom' }): string {
-  return n.unsupported ? '未支持的符号' : readAtom(n.value)
+  if (n.unsupported) return '未支持的符号'
+  if (n.literal !== undefined) return n.literal
+  return readAtom(n.value)
 }
 
 function isAlnum(n: Node): boolean {
@@ -206,7 +216,15 @@ function isNum(n: Node): boolean {
   return n.kind === 'atom' && /^[0-9]/.test(n.value)
 }
 function isFunc(n: Node): boolean {
-  if (n.kind === 'atom') return FUNC_NAMES.has(n.value) || FUNC_NAMES.has(n.value.slice(1))
+  if (n.kind === 'atom') {
+    // 字体命令/operatorname 读出的纯字母内容视为函数名（MLP、sgn 等，S3）
+    if (n.literal !== undefined) return /^[A-Za-z]+$/.test(n.literal)
+    return (
+      FUNC_NAMES.has(n.value) ||
+      FUNC_NAMES.has(n.value.slice(1)) ||
+      (n.value.startsWith('\\') && GREEK_LOWER.has(n.value.slice(1)))
+    )
+  }
   if (n.kind === 'scripts') return isFunc(n.base)
   return false
 }
@@ -413,19 +431,12 @@ function readNodes(nodes: Node[], safe = false): string {
       prev = n
       continue
     }
-    if (n.kind === 'atom' && n.value === '(' && prev && isFunc(prev) && fnParen === 0) {
-      fnParen = 1
+    if (n.kind === 'atom' && n.value === '(' && prev && isFunc(prev)) {
+      fnParen++
       prev = n
       continue
     }
-    if (fnParen > 0 && n.kind === 'atom' && (n.value === '(' || n.value === ')')) {
-      fnParen += n.value === '(' ? 1 : -1
-      if (fnParen === 0) {
-        prev = n
-        continue
-      }
-    }
-    if (fnParen === 0 && n.kind === 'atom' && n.value === '(') {
+    if (n.kind === 'atom' && n.value === '(') {
       const span = findSpan(nodes, i)
       if (span) {
         const { text, kind } = readSpan(nodes, i, span, safe, prev, prevSpan)
@@ -441,6 +452,12 @@ function readNodes(nodes: Node[], safe = false): string {
         i = span.end
         continue
       }
+    }
+    // 分组括号已被 span 整段消费，走到这里的右括号只可能是函数应用闭合（含嵌套），静默
+    if (fnParen > 0 && n.kind === 'atom' && n.value === ')') {
+      fnParen--
+      prev = n
+      continue
     }
     const piece = readFull(n)
     if (prevSpan) {

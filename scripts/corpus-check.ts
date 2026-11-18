@@ -93,7 +93,7 @@ const avgLen = (k: 'skeleton' | 'local' | 'detail') =>
 // 降级演示：3 条含白名单外命令的公式（不在 30 条语料内，单独展示）
 const demos = [
   { name: '组合数（\\binom 不支持）', latex: 'C=\\binom{n}{k}' },
-  { name: '符号函数（\\operatorname 不支持）', latex: 'y=\\operatorname{sgn}(x)' },
+  { name: '符号函数（\\operatorname 读函数名原文）', latex: 'y=\\operatorname{sgn}(x)' },
   { name: '样本均值（\\bar 修饰符不支持）', latex: '\\bar{x}=\\frac{1}{n}\\sum_{i=1}^{n}x_{i}' },
 ].map((d) => {
   const r = parse(d.latex)
@@ -111,6 +111,7 @@ md.push(`生成方式：\`npm run check:corpus\`（脚本 scripts/corpus-check.t
 md.push('语料来源：docs/corpus.ts，产品负责人提供的 30 条教材/论文常见公式，LaTeX 与 id 原样未改。')
 md.push('每条执行：parse → narrateLayers（根节点三层文本）→ l1GrandchildLeaks（全树每个节点的 L1 孙节点泄漏检查）。')
 md.push('P1 括号降噪后重跑：与上一提交基线对比，C02/C03/C04/C05/C26/C27 六条按三档新规则改写读法，其余 24 条三层输出逐字节一致；C24 换底读法已在 S1 修复。')
+md.push('S3 字面文本修补后重跑：30 条语料三层输出与 P1/P2 提交基线逐字节一致（字体命令/函数应用/分号改动未触及语料）。')
 md.push('')
 md.push('## 一、汇总表')
 md.push('')
@@ -155,7 +156,8 @@ for (const id of SAMPLE_IDS) {
 md.push('')
 md.push('## 四、降级演示（白名单外命令不整段失败）')
 md.push('')
-md.push('以下 3 条公式含不支持的命令。带参命令（\\binom、\\operatorname、\\bar 等，见解析器 ARITY 表）')
+md.push('以下 3 条公式展示白名单外命令的降级。字体命令与 operatorname（\\text、\\mathrm、\\operatorname 等）自 S3 起读参数原文；')
+md.push('其余带参命令（\\binom、\\hat / \\bar / \\vec 等修饰符，见解析器 ARITY 表）')
 md.push('解析时按参数个数吞掉紧邻参数组，整体作为一个原子朗读为「未支持的符号」，并计入 unknown 计数；')
 md.push('不再把参数误读成独立因子（旧版 \\binom{n}{k} 曾读成「n 乘以 k」，已修复）。')
 md.push('无参的白名单外命令仍降级念符号名。页面右下角出现提示「有 N 个符号未能朗读」（role="status"，读屏可感知）。')
@@ -181,7 +183,9 @@ md.push('')
 md.push('## 五、局限（如实声明）')
 md.push('')
 md.push('- 只支持 6 类结构：分式、根号、上下标、求和/积分（含上下限）、矩阵、分段函数；不代表任意 LaTeX。')
-md.push('- 白名单外带参命令（\\binom、\\operatorname、\\mathrm、\\hat / \\bar / \\vec 等修饰符）整体读作「未支持的符号」，参数不朗读，计入角落提示。')
+md.push('- 白名单外带参命令（\\binom、\\hat / \\bar / \\vec 等修饰符）整体读作「未支持的符号」，参数不朗读，计入角落提示。')
+md.push('- 字体命令与 operatorname 读参数原文（S3，2026-11-18）；参数内嵌数学命令（如 \\text{\\alpha}）降级回「未支持的符号」。')
+md.push('- 希腊字母与纯字母字面量后接括号按函数应用静默（S3 惯例）；拉丁字母×括号仍按乘积，\\pi(r+1) 这类希腊乘积记法会被误读为应用。')
 md.push(`- 换底对数读法已修复（S1，2026-11-18）：C24 细节层现读作「${c24.layers?.detail ?? '解析失败'}」，`)
 md.push('  不再出现「下标 ab」粘连。')
 md.push('- 语法错误（如缺右括号、带参命令缺参数）仍整段报错，属预期行为。')

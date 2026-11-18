@@ -463,7 +463,8 @@ if (binom.ok) {
   check('S2 binom 渲染无错误色', !binomHtml.includes('katex-error') && !binomHtml.includes('color: #cc0000'))
 }
 const opname = parse('y=\\operatorname{sgn}(x)')
-check('S2 operatorname 吞一参', opname.ok && opname.unknown.length === 1 && opname.unknown[0] === 'operatorname')
+check('S3 operatorname 读函数名原文', opname.ok && opname.unknown.length === 0, opname.ok ? JSON.stringify(opname.unknown) : opname.error)
+check('S3 operatorname 函数应用静默', narrate(mustParse('y=\\operatorname{sgn}(x)'), 2) === 'y 等于 sgn x', narrate(mustParse('y=\\operatorname{sgn}(x)'), 2))
 const barx = parse('\\bar{x}')
 check('S2 bar 吞一参', barx.ok && barx.unknown.length === 1 && barx.unknown[0] === 'bar')
 check('S2 修饰符读未支持的符号', narrate(mustParse('\\hat{a}'), 2) === '未支持的符号', narrate(mustParse('\\hat{a}'), 2))
@@ -539,7 +540,7 @@ check('P2-b 转义花括号', narrate(mustParse(setBuilder), 2) === '左花括�
 check('P2-b 名单外仍计未知', parse('\\foo').ok && (parse('\\foo') as { unknown: string[] }).unknown[0] === 'foo')
 
 // P2-c ARITY 扩充：新命令吞参读「未支持的符号」并计未知
-for (const cmd of ['mathbf', 'widetilde', 'boxed', 'phantom', 'hbox', 'textbf', 'substack']) {
+for (const cmd of ['widetilde', 'boxed', 'phantom', 'hbox', 'substack']) {
   const r = parse('\\' + cmd + '{x}')
   check(`P2-c ${cmd} 吞一参`, r.ok && r.unknown.length === 1 && r.unknown[0] === cmd, r.ok ? JSON.stringify(r.unknown) : r.error)
   check(`P2-c ${cmd} 读未支持的符号`, narrate(mustParse('\\' + cmd + '{x}'), 2) === '未支持的符号')
@@ -553,7 +554,8 @@ const colorR = parse('\\color{red} x')
 check('P2-c color 吞色参留正文', colorR.ok && colorR.unknown.length === 1 && colorR.unknown[0] === 'color', colorR.ok ? JSON.stringify(colorR.unknown) : colorR.error)
 check('P2-c color 正文仍可读', narrate(mustParse('\\color{red} x'), 2) === '未支持的符号 x', narrate(mustParse('\\color{red} x'), 2))
 const textZh = 'y=\\text{当 x 大于零}'
-check('P2-c text 不逐字拼读', narrate(mustParse(textZh), 2) === 'y 等于 未支持的符号', narrate(mustParse(textZh), 2))
+check('S3 text 读中文原文', narrate(mustParse(textZh), 2) === 'y 等于 当 x 大于零', narrate(mustParse(textZh), 2))
+check('S3 text 不逐字拼读命令名', !narrate(mustParse(textZh), 2).includes('t e x t'), narrate(mustParse(textZh), 2))
 const substackSum = '\\sum_{\\substack{i<n\\\\ j<n}} a_{ij}'
 const subR = parse(substackSum)
 check('P2-c 多行 substack 可解析', subR.ok && subR.unknown.includes('substack'), subR.ok ? JSON.stringify(subR.unknown) : subR.error)
@@ -588,6 +590,33 @@ const sorted = [...unknownCounts].sort((a, b) => a - b)
 const median = (sorted[4] + sorted[5]) / 2
 check('P2 随机10 未朗读中位数≤2', median <= 2, `中位数=${median} 明细=${unknownCounts.join(',')}`)
 console.log(`随机10条未朗读明细：${RANDOM10.map(([n], i) => `${n}=${unknownCounts[i]}`).join('；')}；中位数=${median}`)
+
+// S3 字面文本 + 函数应用扩充：字体命令读原文、希腊字母/纯字母字面量按函数应用、分号读音
+const MLP_TEX = 'e_{ij} = \\sigma(\\text{MLP}_{\\theta}([z_i; z_j; p_k]))'
+const MLP_TARGET = 'e 下标 ij 等于 西格玛 MLP 下标 西塔 左方括号 z 下标 i 分号 z 下标 j 分号 p 下标 k 右方括号'
+const mlpR = parse(MLP_TEX)
+check('S3 用户例句零未知', mlpR.ok && mlpR.unknown.length === 0, mlpR.ok ? JSON.stringify(mlpR.unknown) : mlpR.error)
+check('S3 用户例句细节句', narrate(mustParse(MLP_TEX), 2) === MLP_TARGET, narrate(mustParse(MLP_TEX), 2))
+check('S3 用户例句无左括号', !narrate(mustParse(MLP_TEX), 2).includes('左括号'), narrate(mustParse(MLP_TEX), 2))
+check('S3 希腊函数应用', narrate(mustParse('\\sigma(x)'), 2) === '西格玛 x', narrate(mustParse('\\sigma(x)'), 2))
+check('S3 希腊函数参数静默', narrate(mustParse('\\phi(a+b)'), 2) === '斐 a 加 b', narrate(mustParse('\\phi(a+b)'), 2))
+check('S3 拉丁字母乘积不变', narrate(mustParse('a(b+c)'), 2) === 'a 乘以 b 与 c 的和', narrate(mustParse('a(b+c)'), 2))
+check('S3 希腊乘积惯例代价', narrate(mustParse('\\pi(r+1)'), 2) === '圆周率 r 加 一', narrate(mustParse('\\pi(r+1)'), 2))
+for (const cmd of ['mathrm', 'mathbf', 'textbf', 'mathbb', 'mathcal']) {
+  const r = parse('\\' + cmd + '{R}')
+  check(`S3 ${cmd} 读原文`, r.ok && r.unknown.length === 0 && narrate(mustParse('\\' + cmd + '{R}'), 2) === 'R', r.ok ? narrate(mustParse('\\' + cmd + '{R}'), 2) : r.error)
+}
+check('S3 text 函数名应用', narrate(mustParse('\\text{MLP}(x)'), 2) === 'MLP x', narrate(mustParse('\\text{MLP}(x)'), 2))
+const textMath = parse('\\text{\\alpha}')
+check('S3 text 内嵌数学降级', textMath.ok && textMath.unknown.length === 1 && textMath.unknown[0] === 'text', textMath.ok ? JSON.stringify(textMath.unknown) : textMath.error)
+check('S3 降级读未支持的符号', narrate(mustParse('\\text{\\alpha}'), 2) === '未支持的符号', narrate(mustParse('\\text{\\alpha}'), 2))
+check('S3 分号读音', narrate(mustParse('a;b'), 2) === 'a 分号 b', narrate(mustParse('a;b'), 2))
+for (const tex of [MLP_TEX, '\\sigma(x+y)', '\\text{MLP}_{\\theta}(x)', '\\phi(a+b)']) {
+  for (const node of allNodes(mustParse(tex))) {
+    const leaks = l1GrandchildLeaks(node)
+    check(`S3+A6 字面无泄漏 ${node.id || '根'}@${tex.slice(0, 10)}`, leaks.length === 0, leaks.join(','))
+  }
+}
 
 if (failed) {
   throw new Error(`共 ${failed} 项失败`)
