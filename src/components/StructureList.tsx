@@ -29,22 +29,24 @@ export default function StructureList({ index, selectedId, onSelect }: Props) {
   )
   if (!index.size) return null
   return (
-    <details className="struct-list" open>
-      <summary>按结构点名</summary>
-      <ul>
-        {entries.map((e) => (
-          <li key={e.id} style={{ paddingLeft: `${e.depth * 0.9}rem` }}>
-            <button
-              type="button"
-              aria-label={e.aria}
-              aria-current={selectedId === e.id ? 'true' : undefined}
-              onClick={() => onSelect(e.id)}
-            >
-              {e.label}
-            </button>
-          </li>
-        ))}
-      </ul>
-    </details>
+    <section className="panel struct-panel" aria-label="按结构点名">
+      <details className="struct-list" open>
+        <summary>按结构点名</summary>
+        <ul>
+          {entries.map((e) => (
+            <li key={e.id} style={{ paddingLeft: `${e.depth * 0.9}rem` }}>
+              <button
+                type="button"
+                aria-label={e.aria}
+                aria-current={selectedId === e.id ? 'true' : undefined}
+                onClick={() => onSelect(e.id)}
+              >
+                {e.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </details>
+    </section>
   )
 }

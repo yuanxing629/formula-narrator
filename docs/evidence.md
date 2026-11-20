@@ -102,3 +102,36 @@
 ## 六、截图索引
 
 本轮内嵌浏览器面板隐藏，截图接口不可用（NATIVE_BROWSER_VIEWPORT_UNAVAILABLE）；布局与降级结论以 §2.1–§2.3 数值实测为准。作品帖所需截图待打开面板后补拍（首屏、点选高亮、对比差异卡、移动窄屏、降级提示五张）。
+
+## 七、布局修订增补（L1–L4，同日稍后）
+
+§2.1/§2.2 的布局数值为修订前口径，以本节为准。断点裁定：两栏阈值 **768px**（验收 2 要求 768×1024 两栏；L4 单栏范围相应为 <768，产品负责人已确认）。
+
+- DOM 顺序：渲染区（公式+引导一行+面包屑+钉住对比）→ 朗读区 → 按结构点名 → 公式输入（示例单行横滚 + 「粘贴自己的 LaTeX」details）。移动单栏视觉序 = DOM 序 = Tab 序，未用 CSS order。
+- 桌面 grid：`render narr / struct narr / input input`；右栏 sticky top 0.75rem、max-height calc(100vh - 1.5rem) 内滚；两栏顶部对齐。
+- 朗读区：顶部动作仅「读这个节点」「从头读」；三层 ①②③ 序号 + 左竖线 + 字号递减（1.05/0.95/0.88rem）；播放层即时高亮（换节点清除）；朗读稿 details 默认折叠（复制回退时自动展开）。
+- 实测（headless Chrome 157 + CDP：Emulation 真实视口、Input.dispatchKeyEvent 真实 Tab 键）：
+  - 1366×768：公式 [149,260]、面包屑 [299,339]、三层首行 [257,360,485] 全在一屏；hero 65px；grid 两栏、narr sticky；无横向溢出。
+  - 点根号：右栏标题「朗读区 · 等式 › 右边 › 分式 › 分子 › 根号」、三层同步更新、scrollY=0 无需滚动。
+  - 滚 500px：narrTop=12、renderTop=-273 → sticky 生效；播放骨架 → 该层高亮 true。
+  - 768×1024：grid 两栏不断裂、无横向溢出（scrollW 753 ≤ 768）。
+  - 375×812：单栏，四块视觉序 = DOM 序；真实 Tab 23 停与可见焦点序逐一对应；无横向溢出（360 ≤ 375）。
+  - 降级路径（aligned）：两栏不塌陷，左降级渲染、右友好句+原因，钉住禁用。
+- 截图：docs/screenshots/01-desktop-1366x768.png、02-desktop-selected.png、03-desktop-playing.png、04-desktop-sticky.png、05-tablet-768x1024.png、06-mobile-375x812-full.png、07-desktop-degrade.png。
+- 回归：tsc 0 错、780 断言全过、构建通过；朗读/解析/差异逻辑零改动。
+
+## 八、定位文案修订增补（同日，布局修订之后）
+
+只改文案与一个折叠块；布局网格、配色、朗读/解析/差异逻辑零改动。
+
+- h1：公式旁白 Formula Narrator；tagline 一行：给视障学生的公式分层朗读器——先听骨架，再听细节。未新增介绍性段落。
+- 公式区下方一行：点公式里的任意部分，只听那一部分；按 Tab 可以走「按结构点名」。
+- hero 内新增「这是什么？」details，默认收起，五条列表（读屏痛点／分层与对比／六类结构与未支持符号／不登录不上传不第三方／明眼人核对推导）；summary 原生键盘可达，Enter 展开/收起。
+- index.html：title「公式旁白 Formula Narrator · 给视障学生的公式分层朗读器」；meta description「给视障学生的公式分层朗读器：先听骨架，再按需展开细节。」
+- 实测（方法同 §七；Enter 键事件带 text '\r' 以触发 summary 的 keypress 默认动作）：
+  - 1366×768 首屏：hero 103px，公式 [187,298]、面包屑 [337,377]、三层首行 [295,397,523] 全在一屏；grid 两栏 + sticky 不变。
+  - h1/tagline 为可选中文本（userSelect ≠ none、hero 内无 img/canvas）；tagline、提示行、title、meta 与任务文案逐字一致。
+  - 折叠块默认 open=false；summary 聚焦后 Enter → open=true，再 Enter → 收起；列表 5 条。
+  - 375×812 真实 Tab 24 停（较 §七 多一个 summary 停点）与可见焦点序逐一对应；768×1024 两栏、点选同步、sticky、播放高亮、降级路径复跑全过。
+- 截图 01–07 已按新文案重新生成（01 为折叠块收起态）。
+- 回归：tsc 0 错、解析自检与 30 条语料全过、构建通过。

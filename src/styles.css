@@ -27,19 +27,63 @@ main {
 }
 
 .hero h1 {
-  margin: 0 0 0.25rem;
-  font-size: 1.9rem;
+  margin: 0 0 0.15rem;
+  font-size: 1.35rem;
+}
+
+.en-name {
+  margin-left: 0.4rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--muted);
 }
 
 .tagline {
-  margin: 0 0 0.75rem;
-  font-size: 1.05rem;
+  margin: 0;
+  font-size: 0.95rem;
 }
 
-.guide {
-  margin: 0;
-  padding-left: 1.4rem;
+.about-details {
+  margin-top: 0.35rem;
+}
+
+.about-details summary {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2rem;
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.about-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.about-details summary::before {
+  content: '▸';
   color: var(--muted);
+}
+
+.about-details[open] summary::before {
+  content: '▾';
+}
+
+.about-details ul {
+  margin: 0.4rem 0 0;
+  padding-left: 1.4rem;
+  font-size: 0.9rem;
+}
+
+.about-details li {
+  margin: 0.2rem 0;
+}
+
+.guide-line {
+  margin: 0.4rem 0 0;
+  font-size: 0.9rem;
 }
 
 .panel {
@@ -57,9 +101,28 @@ main {
 
 .preset-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: thin;
   gap: 0.5rem;
   margin-bottom: 0.75rem;
+  padding-bottom: 0.25rem;
+}
+
+.preset-row button {
+  flex: 0 0 auto;
+}
+
+.paste-details summary {
+  cursor: pointer;
+  font-weight: 600;
+  min-height: 2.5rem;
+  display: flex;
+  align-items: center;
+}
+
+.paste-details textarea {
+  margin-top: 0.5rem;
 }
 
 button {
@@ -208,6 +271,12 @@ textarea {
   font-weight: 600;
 }
 
+.struct-panel .struct-list {
+  margin-top: 0;
+  border-top: 0;
+  padding-top: 0;
+}
+
 .struct-list {
   margin-top: 0.75rem;
   border-top: 1px solid var(--line);
@@ -253,6 +322,7 @@ textarea {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem 0.75rem;
+  margin-top: 0.6rem;
 }
 
 .pin-row button {
@@ -267,7 +337,7 @@ textarea {
 }
 
 .diff-card {
-  margin: 0.75rem 0 0;
+  margin: 0.5rem 0 0;
   padding: 0.6rem 0.9rem;
   background: var(--accent-soft);
   border: 1px solid var(--accent);
@@ -327,8 +397,62 @@ textarea {
 }
 
 .layer {
-  border-top: 1px solid var(--line);
-  padding: 0.75rem 0;
+  border-left: 3px solid var(--line);
+  border-radius: 0 4px 4px 0;
+  padding: 0.5rem 0 0.5rem 0.75rem;
+  margin-top: 0.6rem;
+}
+
+.layer.playing {
+  border-left-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.layer-skeleton .layer-text {
+  font-size: 1.05rem;
+}
+
+.layer-local .layer-text {
+  font-size: 0.95rem;
+}
+
+.layer-detail .layer-text {
+  font-size: 0.88rem;
+}
+
+.script-details summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  min-height: 2.5rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.script-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.script-details summary::before {
+  content: '▸';
+  color: var(--muted);
+}
+
+.script-details[open] summary::before {
+  content: '▾';
+}
+
+.script-details summary h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.script-body {
+  padding-top: 0.5rem;
+}
+
+.script-body button {
+  margin-bottom: 0.4rem;
 }
 
 .layer-head {
@@ -382,9 +506,56 @@ footer {
   font-size: 0.85rem;
 }
 
+@media (min-width: 768px) {
+  main {
+    max-width: 72rem;
+  }
+
+  .tagline {
+    white-space: nowrap;
+  }
+
+  /* 两栏：左渲染+结构点名，右朗读 sticky；DOM 顺序保持 公式→朗读→结构→输入（移动单栏序） */
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      'render narr'
+      'struct narr'
+      'input input';
+    gap: 1.25rem;
+    align-items: start;
+  }
+
+  .layout > .panel {
+    margin-top: 0;
+  }
+
+  .render-panel {
+    grid-area: render;
+  }
+
+  .struct-panel {
+    grid-area: struct;
+  }
+
+  .input-panel {
+    grid-area: input;
+  }
+
+  .narr-panel {
+    grid-area: narr;
+    align-self: start;
+    position: sticky;
+    top: 0.75rem;
+    max-height: calc(100vh - 1.5rem);
+    overflow-y: auto;
+  }
+}
+
 @media (max-width: 480px) {
   .hero h1 {
-    font-size: 1.5rem;
+    font-size: 1.2rem;
   }
 
   /* 小屏改静态布局：固定悬浮会盖住底部按钮的 tap 热区 */

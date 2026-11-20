@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { narrateLayers } from '../lib/narrate'
 import type { Node } from '../lib/parser'
 import { speak, speechAvailable } from '../lib/speak'
@@ -13,19 +13,25 @@ interface Props {
 }
 
 const layers = [
-  { key: 'skeleton', label: '骨架', hint: '先听结构：这是什么式子，由哪几块组成' },
-  { key: 'local', label: '局部', hint: '再听关键部分：每一块里有什么' },
-  { key: 'detail', label: '细节', hint: '最后逐字听完整表达式' },
+  { key: 'skeleton', num: '①', label: '骨架', hint: '先听结构：这是什么式子，由哪几块组成' },
+  { key: 'local', num: '②', label: '局部', hint: '再听关键部分：每一块里有什么' },
+  { key: 'detail', num: '③', label: '细节', hint: '最后逐字听完整表达式' },
 ] as const
+
+type LayerKey = (typeof layers)[number]['key']
 
 export default function NarrationPanel({ path, node, rootDetail, isRoot, error }: Props) {
   const [notice, setNotice] = useState('')
+  const [playing, setPlaying] = useState<LayerKey | ''>('')
   const copyRef = useRef<HTMLTextAreaElement>(null)
+  const scriptRef = useRef<HTMLDetailsElement>(null)
   const text = useMemo(() => (node ? narrateLayers(node) : undefined), [node])
+  // 换节点后清除上一层的播放高亮
+  useEffect(() => setPlaying(''), [node])
 
   if (error || !text || !node) {
     return (
-      <section className="panel" aria-label="朗读区">
+      <section className="panel narr-panel" aria-label="朗读区">
         <h2>朗读区</h2>
         {error ? (
           <>
@@ -47,6 +53,12 @@ export default function NarrationPanel({ path, node, rootDetail, isRoot, error }
     setNotice(ok ? '' : '语音不可用，请直接阅读下方文本。')
   }
 
+  const playLayer = (key: LayerKey) => {
+    const ok = speak(text[key])
+    if (ok) setPlaying(key)
+    setNotice(ok ? '' : '语音不可用，请直接阅读下方文本。')
+  }
+
   const script = `骨架：${text.skeleton}\n局部：${text.local}\n细节：${text.detail}`
 
   const copyScript = async () => {
@@ -54,6 +66,8 @@ export default function NarrationPanel({ path, node, rootDetail, isRoot, error }
       await navigator.clipboard.writeText(script)
       setNotice('朗读稿已复制。')
     } catch {
+      // 回退路径需要 textarea 可见：折叠态先展开
+      if (scriptRef.current) scriptRef.current.open = true
       const ta = copyRef.current
       if (ta) {
         ta.focus()
@@ -69,7 +83,7 @@ export default function NarrationPanel({ path, node, rootDetail, isRoot, error }
   }
 
   return (
-    <section className="panel" aria-label="朗读区">
+    <section className="panel narr-panel" aria-label="朗读区">
       <h2>朗读区 · {path}</h2>
       {!speechAvailable() && (
         <p className="muted" role="status">
@@ -86,31 +100,35 @@ export default function NarrationPanel({ path, node, rootDetail, isRoot, error }
           disabled={isRoot || !rootDetail}
           title={isRoot ? '当前已在整式根节点' : '从头朗读整个公式'}
         >
-          读整体
+          从头读
         </button>
       </div>
-      {layers.map(({ key, label, hint }) => (
-        <div className="layer" key={key}>
+      {layers.map(({ key, num, label, hint }) => (
+        <div className={`layer layer-${key}${playing === key ? ' playing' : ''}`} key={key}>
           <div className="layer-head">
-            <h3>{label}</h3>
+            <h3>
+              {num} {label}
+            </h3>
             <span className="muted">{hint}</span>
-            <button type="button" onClick={() => handleSpeak(text[key])}>
+            <button type="button" onClick={() => playLayer(key)}>
               播放{label}
             </button>
           </div>
           <p className="layer-text">{text[key]}</p>
         </div>
       ))}
-      <div className="layer">
-        <div className="layer-head">
+      <details className="layer script-details" ref={scriptRef}>
+        <summary>
           <h3>朗读稿</h3>
           <span className="muted">纯文本，可复制带走</span>
+        </summary>
+        <div className="script-body">
           <button type="button" onClick={copyScript}>
             复制朗读稿
           </button>
+          <textarea ref={copyRef} className="script-area" readOnly rows={4} value={script} aria-label="朗读稿纯文本" />
         </div>
-        <textarea ref={copyRef} className="script-area" readOnly rows={4} value={script} aria-label="朗读稿纯文本" />
-      </div>
+      </details>
       {notice && (
         <p className="muted" role="status">
           {notice}

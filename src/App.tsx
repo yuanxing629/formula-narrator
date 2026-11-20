@@ -64,84 +64,96 @@ export default function App() {
   return (
     <main>
       <header className="hero">
-        <h1>公式旁白</h1>
+        <h1>
+          公式旁白 <span className="en-name">Formula Narrator</span>
+        </h1>
         <p className="tagline">
-          给每个数学公式配一位会分层讲解的旁白：先听懂骨架，再按需展开细节。
+          给视障学生的公式分层朗读器——先听骨架，再听细节。
         </p>
-        <ol className="guide" aria-label="30 秒看懂">
-          <li>看渲染区：公式长什么样，一眼有数。</li>
-          <li>点任意结构：高亮 + 面包屑定位，骨架 → 局部 → 细节，只听这一支。</li>
-          <li>换示例或粘贴 LaTeX：状态自动存进网址，可直接分享链接。</li>
-        </ol>
+        <details className="about-details">
+          <summary>这是什么？</summary>
+          <ul>
+            <li>屏幕阅读器读公式是一次性念完的一长串：听完记不住，想回听某一项只能从头再来。</li>
+            <li>公式旁白把公式拆成结构：先给骨架，再按你点的那一部分展开细节；两条式子还能对比差在哪。</li>
+            <li>支持分式、根号、上下标、求和/积分、矩阵、分段六类结构。带参命令读作「未支持的符号」——宁可不读，也不读错。</li>
+            <li>不登录、不上传、不请求第三方服务；语音不可用时三层文本照常可读。</li>
+            <li>明眼人也能用：核对一段推导里你漏看了哪一项。</li>
+          </ul>
+        </details>
       </header>
 
-      <section className="panel" aria-label="公式输入">
-        <h2>公式输入</h2>
-        <div className="preset-row" role="group" aria-label="示例公式">
-          {presets.map((p) => (
+      <div className="layout">
+        <section className="panel render-panel" aria-label="渲染区">
+          <h2>渲染区</h2>
+          <FormulaView
+            tree={parsed.ok ? parsed.node : undefined}
+            rawLatex={parsed.ok ? undefined : latex}
+            selectedId={selectedId}
+            index={index}
+            onSelect={select}
+          />
+          <p className="guide-line muted">
+            点公式里的任意部分，只听那一部分；按 Tab 可以走「按结构点名」。
+          </p>
+          <Breadcrumb crumbs={crumbs} onSelect={select} />
+          <div className="pin-row" role="group" aria-label="钉住对比">
             <button
-              key={p.id}
               type="button"
-              className={preset?.id === p.id ? 'preset active' : 'preset'}
-              aria-pressed={preset?.id === p.id}
-              onClick={() => update(p.latex)}
+              aria-pressed={pinned !== null}
+              disabled={pinned === null && !parsed.ok}
+              onClick={() => setPinned(pinned === null ? latex : null)}
             >
-              {p.name}
+              {pinned === null ? '钉住对比' : '对比中 · 清除'}
             </button>
-          ))}
-        </div>
-        <label htmlFor="latex-input">LaTeX（可粘贴）</label>
-        <textarea
-          id="latex-input"
-          rows={3}
-          value={latex}
-          spellCheck={false}
-          onChange={(e) => update(e.target.value)}
-        />
-      </section>
+            <span className="muted">
+              {pinned === null
+                ? '把当前公式记为基准，再改输入框，自动说出差异。'
+                : '已钉住基准；继续改输入框或换示例，差异会自动更新。'}
+            </span>
+          </div>
+          <p className="diff-card" aria-live="polite">
+            {diffText}
+          </p>
+        </section>
 
-      <section className="panel" aria-label="渲染区">
-        <h2>渲染区</h2>
-        <FormulaView
-          tree={parsed.ok ? parsed.node : undefined}
-          rawLatex={parsed.ok ? undefined : latex}
-          selectedId={selectedId}
-          index={index}
-          onSelect={select}
+        <NarrationPanel
+          path={path || preset?.name || '自定义公式'}
+          node={selectedNode}
+          rootDetail={rootDetail}
+          isRoot={selectedId === '0'}
+          error={parsed.ok ? undefined : parsed.error}
         />
-        <Breadcrumb crumbs={crumbs} onSelect={select} />
+
         <StructureList index={index} selectedId={selectedId} onSelect={select} />
-        <p className="muted">点公式里的任意结构，或用 Tab + 回车选中；面包屑可点回上层。</p>
-      </section>
 
-      <section className="panel" aria-label="钉住对比">
-        <div className="pin-row">
-          <button
-            type="button"
-            aria-pressed={pinned !== null}
-            disabled={pinned === null && !parsed.ok}
-            onClick={() => setPinned(pinned === null ? latex : null)}
-          >
-            {pinned === null ? '钉住对比' : '对比中 · 清除'}
-          </button>
-          <span className="muted">
-            {pinned === null
-              ? '把当前公式记为基准，再改输入框，自动说出差异。'
-              : '已钉住基准；继续改输入框或换示例，差异会自动更新。'}
-          </span>
-        </div>
-        <p className="diff-card" aria-live="polite">
-          {diffText}
-        </p>
-      </section>
-
-      <NarrationPanel
-        path={path || preset?.name || '自定义公式'}
-        node={selectedNode}
-        rootDetail={rootDetail}
-        isRoot={selectedId === '0'}
-        error={parsed.ok ? undefined : parsed.error}
-      />
+        <section className="panel input-panel" aria-label="公式输入">
+          <h2>公式输入</h2>
+          <div className="preset-row" role="group" aria-label="示例公式">
+            {presets.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className={preset?.id === p.id ? 'preset active' : 'preset'}
+                aria-pressed={preset?.id === p.id}
+                onClick={() => update(p.latex)}
+              >
+                {p.name}
+              </button>
+            ))}
+          </div>
+          <details className="paste-details">
+            <summary>粘贴自己的 LaTeX</summary>
+            <label htmlFor="latex-input">LaTeX（可粘贴）</label>
+            <textarea
+              id="latex-input"
+              rows={3}
+              value={latex}
+              spellCheck={false}
+              onChange={(e) => update(e.target.value)}
+            />
+          </details>
+        </section>
+      </div>
 
       <footer className="muted">
         纯前端静态页面 · 不请求任何第三方服务 · 语音不可用时文本完整可读
