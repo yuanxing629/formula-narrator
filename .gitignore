@@ -3,3 +3,5 @@ dist
 *.local
 *.tsbuildinfo
 .DS_Store
+.公式旁白.qoder.site
+AGENTS.md
